@@ -246,7 +246,7 @@ echo "Starting the runner as user $run_as"
 # configure the runner if the runner is non ephemeral or jit config is disabled
 if [[ "$enable_jit_config" == "false" || $agent_mode != "ephemeral" ]]; then
   echo "Configure GH Runner as user $run_as"
-  sudo --preserve-env=RUNNER_ALLOW_RUNASROOT -u "$run_as" -- ./config.sh --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
+  sudo -E -u "$run_as" -- ./config.sh --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
 fi
 
 create_xray_success_segment "$SEGMENT"
@@ -255,14 +255,15 @@ if [[ $agent_mode = "ephemeral" ]]; then
 
   if [[ "$enable_jit_config" == "true" ]]; then
     echo "Starting with JIT config"
-    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT -u "$run_as" -- ./run.sh --jitconfig $${config}
+    sudo -E -u "$run_as" -- ./run.sh --jitconfig $${config}
   else
     echo "Starting without JIT config"
-    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT -u "$run_as" -- ./run.sh
+    sudo -E -u "$run_as" -- ./run.sh
   fi
   echo "Runner has finished"
 else
   echo "Installing the runner as a service"
+  export GITHUB_ACTIONS_RUNNER_SERVICE_TEMPLATE="/opt/github.runner.service.template"
   ./svc.sh install "$run_as"
   echo "Starting the runner in persistent mode"
   ./svc.sh start

@@ -890,3 +890,19 @@ variable "runners_ebs_optimized" {
   type        = bool
   default     = false
 }
+
+variable "restricted_github" {
+  description = "Flag to allow specific VPC/network in only necessary lambdas that need to reach restricted Github"
+  type        = bool
+  default     = true
+}
+
+variable "http_proxy" {
+  type    = string
+  default = "http://lhcproxy2.eu.options-it.com:3128"
+}
+
+variable "no_proxy" {
+  type    = string
+  default = "10.*,10.0.0.0/8,10.100.0.1,10.233.*.*,127.0.0.*,127.0.0.1,169.254.169.254,172.16.*.*,172.16.0.0/12,172.17.*.*,172.29.*.*,172.30.*.*,192.168.*,192.168.0.0/16,artifactory.systematica.com,eks.amazonaws.com,.eu-west-1.eks.amazonaws.com,internal-k8s-stciio-1d6402e146-1525655380.eu-west-1.elb.amazonaws.com,kubernetes,kubernetes.default,kubernetes.default.svc,localhost,*.local.systematica.com,.local.systematica.com,*.options-it.com,.options-it.com,options-it.com,.privatelink.snowflakecomputing.com,privatelink.snowflakecomputing.com,s3.eu-west-1.vpce.amazonaws.com,si-aws.com,*.systematica.com,.systematica.com,systematica.com,*.si-cloud.io,.si-cloud.io,si-cloud.io"
+}

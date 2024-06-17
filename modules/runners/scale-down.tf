@@ -36,6 +36,12 @@ resource "aws_lambda_function" "scale_down" {
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
       POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error
+      HTTP_PROXY                               = var.http_proxy
+      HTTPS_PROXY                              = var.http_proxy
+      http_proxy                               = var.http_proxy
+      https_proxy                              = var.http_proxy
+      no_proxy                                 = var.no_proxy
+      NO_PROXY                                 = var.no_proxy
     }
   }
 
