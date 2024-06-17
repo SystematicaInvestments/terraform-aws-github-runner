@@ -40,7 +40,7 @@ resource "aws_lambda_function" "ssm_housekeeper" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github) ? [true] : []
+    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github == false) ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
