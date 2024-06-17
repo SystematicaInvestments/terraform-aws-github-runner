@@ -46,6 +46,12 @@ resource "aws_lambda_function" "scale_up" {
       SSM_CONFIG_PATH                          = "${var.ssm_paths.root}/${var.ssm_paths.config}"
       SUBNET_IDS                               = join(",", var.subnet_ids)
       ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS     = jsonencode(var.enable_on_demand_failover_for_errors)
+      HTTP_PROXY                               = var.http_proxy
+      HTTPS_PROXY                              = var.http_proxy
+      http_proxy                               = var.http_proxy
+      https_proxy                              = var.http_proxy
+      no_proxy                                 = var.no_proxy
+      NO_PROXY                                 = var.no_proxy
     }
   }
 

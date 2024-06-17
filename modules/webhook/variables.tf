@@ -194,3 +194,9 @@ variable "ssm_paths" {
     webhook = string
   })
 }
+
+variable "restricted_github" {
+  description = "Flag to allow specific VPC/network in only necessary lambdas that need to reach restricted Github"
+  type        = bool
+  default     = true
+}
