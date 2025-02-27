@@ -47,6 +47,7 @@ module "direct" {
     matcher_config_parameter_store_tier   = var.matcher_config_parameter_store_tier,
     api_gw_source_arn                     = "${aws_apigatewayv2_api.webhook.execution_arn}/*/*/${local.webhook_endpoint}"
     ssm_parameter_runner_matcher_config   = aws_ssm_parameter.runner_matcher_config
+    restricted_github                     = var.restricted_github
   }
 }
 
@@ -83,6 +84,7 @@ module "eventbridge" {
     api_gw_source_arn                     = "${aws_apigatewayv2_api.webhook.execution_arn}/*/*/${local.webhook_endpoint}"
     ssm_parameter_runner_matcher_config   = aws_ssm_parameter.runner_matcher_config
     accept_events                         = var.eventbridge.accept_events
+    restricted_github                     = var.restricted_github
   }
 
 }

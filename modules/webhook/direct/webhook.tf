@@ -33,7 +33,7 @@ resource "aws_lambda_function" "webhook" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.config.lambda_subnet_ids != null && var.config.lambda_security_group_ids != null ? [true] : []
+    for_each = var.config.lambda_subnet_ids != null && (var.config.lambda_security_group_ids != null && var.config.restricted_github == false) ? [true] : []
     content {
       security_group_ids = var.config.lambda_security_group_ids
       subnet_ids         = var.config.lambda_subnet_ids

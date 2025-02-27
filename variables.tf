@@ -986,6 +986,12 @@ variable "user_agent" {
   default     = "github-aws-runners"
 }
 
+variable "restricted_github" {
+  description = "Flag to allow specific VPC/network in only necessary lambdas that need to reach restricted Github"
+  type        = bool
+  default     = true
+}
+
 variable "http_proxy" {
   type    = string
   default = "http://lhcproxy2.eu.options-it.com:3128"

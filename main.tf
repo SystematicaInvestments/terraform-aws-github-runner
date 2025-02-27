@@ -146,6 +146,8 @@ module "webhook" {
   aws_partition             = var.aws_partition
 
   log_level = var.log_level
+
+  restricted_github = var.restricted_github
 }
 
 module "runners" {
@@ -321,6 +323,8 @@ module "runner_binaries" {
   aws_partition             = var.aws_partition
 
   lambda_principals = var.lambda_principals
+
+  restricted_github = var.restricted_github
 }
 
 module "ami_housekeeper" {

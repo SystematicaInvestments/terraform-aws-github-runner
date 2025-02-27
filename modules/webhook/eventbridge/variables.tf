@@ -47,5 +47,6 @@ variable "config" {
       version = string
     })
     accept_events = optional(list(string), null)
+    restricted_github = optional(bool, true)
   })
 }

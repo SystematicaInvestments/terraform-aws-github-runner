@@ -46,5 +46,6 @@ variable "config" {
       arn     = string
       version = string
     })
+    restricted_github = optional(bool, true)
   })
 }
