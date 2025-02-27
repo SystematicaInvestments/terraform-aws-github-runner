@@ -274,6 +274,9 @@ module "runners" {
   metrics = var.metrics
 
   job_retry = var.job_retry
+
+  http_proxy = var.http_proxy
+  no_proxy   = var.no_proxy 
 }
 
 module "runner_binaries" {
