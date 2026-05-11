@@ -62,6 +62,12 @@ resource "aws_lambda_function" "scale_up" {
       ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS     = jsonencode(var.enable_on_demand_failover_for_errors)
       SCALE_ERRORS                             = jsonencode(var.scale_errors)
       JOB_RETRY_CONFIG                         = jsonencode(local.job_retry_config)
+      HTTP_PROXY                               = var.http_proxy
+      HTTPS_PROXY                              = var.http_proxy
+      http_proxy                               = var.http_proxy
+      https_proxy                              = var.http_proxy
+      no_proxy                                 = var.no_proxy
+      NO_PROXY                                 = var.no_proxy
     }
   }
 

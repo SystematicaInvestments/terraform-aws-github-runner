@@ -52,8 +52,8 @@ module "direct" {
   source = "./direct"
 
   config = {
-    lambda_subnet_ids                     = var.lambda_subnet_ids,
-    lambda_security_group_ids             = var.lambda_security_group_ids,
+    lambda_subnet_ids                     = var.restricted_github ? [] : var.lambda_subnet_ids,
+    lambda_security_group_ids             = var.restricted_github ? [] : var.lambda_security_group_ids,
     prefix                                = var.prefix,
     tags                                  = var.tags,
     sqs_job_queues_arns                   = [for k, v in var.runner_matcher_config : v.arn]
@@ -94,8 +94,8 @@ module "eventbridge" {
   source = "./eventbridge"
 
   config = {
-    lambda_subnet_ids                     = var.lambda_subnet_ids,
-    lambda_security_group_ids             = var.lambda_security_group_ids,
+    lambda_subnet_ids                     = var.restricted_github ? [] : var.lambda_subnet_ids,
+    lambda_security_group_ids             = var.restricted_github ? [] : var.lambda_security_group_ids,
     prefix                                = var.prefix,
     tags                                  = var.tags,
     sqs_job_queues_arns                   = [for k, v in var.runner_matcher_config : v.arn]

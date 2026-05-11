@@ -1058,3 +1058,21 @@ variable "parameter_store_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "http_proxy" {
+  description = "HTTP proxy URL for Lambda functions and runners."
+  type        = string
+  default     = null
+}
+
+variable "no_proxy" {
+  description = "Comma-separated list of hosts/domains to exclude from proxy."
+  type        = string
+  default     = null
+}
+
+variable "restricted_github" {
+  description = "When true, webhook/syncer/ssm-housekeeper lambdas skip VPC placement so they route GitHub traffic via HTTP proxy instead."
+  type        = bool
+  default     = true
+}

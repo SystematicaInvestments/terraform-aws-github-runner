@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 
 install_with_retry() {
   max_attempts=5

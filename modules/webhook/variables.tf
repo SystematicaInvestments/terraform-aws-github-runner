@@ -225,3 +225,9 @@ EOF
     accept_events = optional(list(string), null)
   })
 }
+
+variable "restricted_github" {
+  description = "When true, webhook lambda skips VPC placement."
+  type        = bool
+  default     = true
+}
