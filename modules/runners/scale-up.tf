@@ -72,7 +72,7 @@ resource "aws_lambda_function" "scale_up" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && var.lambda_security_group_ids != null ? [true] : []
+    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github == false) ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
