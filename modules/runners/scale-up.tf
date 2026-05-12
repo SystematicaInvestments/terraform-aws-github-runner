@@ -23,6 +23,7 @@ resource "aws_lambda_function" "scale_up" {
   memory_size                    = var.lambda_scale_up_memory_size
   tags                           = merge(local.tags, var.lambda_tags)
   architectures                  = [var.lambda_architecture]
+  layers                         = var.http_proxy != null ? [aws_lambda_layer_version.barracuda_ca[0].arn] : []
   environment {
     variables = {
       AMI_ID_SSM_PARAMETER_NAME                = local.ami_id_ssm_parameter_name
@@ -68,11 +69,13 @@ resource "aws_lambda_function" "scale_up" {
       https_proxy                              = var.http_proxy
       no_proxy                                 = var.no_proxy
       NO_PROXY                                 = var.no_proxy
+      NODE_USE_ENV_PROXY                       = var.http_proxy != null ? "1" : ""
+      NODE_EXTRA_CA_CERTS                      = var.http_proxy != null ? "/opt/barracuda_ca.crt" : ""
     }
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github == false) ? [true] : []
+    for_each = var.lambda_subnet_ids != null && var.lambda_security_group_ids != null ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
