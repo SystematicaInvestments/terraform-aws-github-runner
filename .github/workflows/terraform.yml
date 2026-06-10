@@ -23,7 +23,7 @@ jobs:
       image: hashicorp/terraform:${{ matrix.terraform }}
     steps:
       - name: "Checkout"
-        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: "Fake zip files" # Validate will fail if it cannot find the zip files
         run: |
           touch lambdas/functions/webhook/webhook.zip
@@ -47,7 +47,7 @@ jobs:
         run: apk add --no-cache tar
         continue-on-error: true
       - if: contains(matrix.terraform, '1.5.')
-        uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 # v4.0.1
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # ratchet:actions/cache@v5
         name: Cache TFLint plugin dir
         with:
           path: ~/.tflint.d/plugins
@@ -89,7 +89,7 @@ jobs:
     container:
       image: hashicorp/terraform:${{ matrix.terraform }}
     steps:
-      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: terraform init
         run: terraform init -get -backend=false -input=false
       - if: contains(matrix.terraform, '1.3.')
@@ -106,7 +106,7 @@ jobs:
         run: apk add --no-cache tar
         continue-on-error: true
       - if: contains(matrix.terraform, '1.3.')
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         name: Cache TFLint plugin dir
         with:
           path: ~/.tflint.d/plugins
@@ -147,7 +147,7 @@ jobs:
     container:
       image: hashicorp/terraform:${{ matrix.terraform }}
     steps:
-      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: terraform init
         run: terraform init -get -backend=false -input=false
       - if: contains(matrix.terraform, '1.5.')
@@ -164,7 +164,7 @@ jobs:
         run: apk add --no-cache tar
         continue-on-error: true
       - if: contains(matrix.terraform, '1.5.')
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         name: Cache TFLint plugin dir
         with:
           path: ~/.tflint.d/plugins
