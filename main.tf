@@ -293,7 +293,7 @@ module "runners" {
   ebs_optimized   = var.runners_ebs_optimized
 
   http_proxy = var.http_proxy
-  no_proxy   = var.no_proxy 
+  no_proxy   = var.no_proxy
 }
 
 module "runner_binaries" {
