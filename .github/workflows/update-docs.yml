@@ -49,7 +49,7 @@ jobs:
         with:
           find-dir: .
           git-commit-message: "docs: auto update terraform docs"
-          git-push: ${{ github.ref != 'refs/heads/main' || github.repository_owner != 'github-aws-runners' }}
+          git-push: false
 
       # change docs via PR in case of locked main branch
       - name: Create Pull Request (main branch only)

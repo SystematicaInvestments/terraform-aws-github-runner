@@ -18,6 +18,7 @@ permissions: {}
 jobs:
   dependency-review:
     name: Dependency vulnerability scan
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     permissions:
       contents: read # for actions/checkout
