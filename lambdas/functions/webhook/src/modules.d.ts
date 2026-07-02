@@ -7,5 +7,6 @@ declare namespace NodeJS {
     REPOSITORY_ALLOW_LIST: string;
     RUNNER_LABELS: string;
     ACCEPT_EVENTS: string;
+    WEBHOOK_ALLOWED_SOURCE_CIDRS: string;
   }
 }

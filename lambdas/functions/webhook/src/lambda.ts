@@ -9,6 +9,7 @@ import { EventWrapper } from './types';
 import { WorkflowJobEvent } from '@octokit/webhooks-types';
 import { ConfigDispatcher, ConfigWebhook, ConfigWebhookEventBridge } from './ConfigLoader';
 import { dispatch } from './runners/dispatch';
+import { assertSourceIpAllowed } from './sourceIp';
 
 export interface Response {
   statusCode: number;
@@ -24,6 +25,7 @@ export async function directWebhook(event: APIGatewayEvent, context: Context): P
   let result: Response;
   try {
     const config: ConfigWebhook = await ConfigWebhook.load();
+    assertSourceIpAllowed(event, config.webhookAllowedSourceCidrs);
     result = await publishForRunners(headersToLowerCase(event.headers), event.body as string, config);
   } catch (e) {
     logger.error(`Failed to handle webhook event`, { error: e });
@@ -49,6 +51,7 @@ export async function eventBridgeWebhook(event: APIGatewayEvent, context: Contex
   let result: Response;
   try {
     const config: ConfigWebhookEventBridge = await ConfigWebhookEventBridge.load();
+    assertSourceIpAllowed(event, config.webhookAllowedSourceCidrs);
     result = await publishOnEventBridge(headersToLowerCase(event.headers), event.body as string, config);
   } catch (e) {
     logger.error(`Failed to handle webhook event`, { error: e });

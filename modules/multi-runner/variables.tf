@@ -371,6 +371,12 @@ variable "repository_white_list" {
   default     = []
 }
 
+variable "webhook_allowed_source_cidrs" {
+  description = "List of source CIDR ranges allowed to call the webhook. Leave empty to disable source IP filtering."
+  type        = list(string)
+  default     = []
+}
+
 variable "log_level" {
   description = "Logging level for lambda logging. Valid values are  'silly', 'trace', 'debug', 'info', 'warn', 'error', 'fatal'."
   type        = string

@@ -10,6 +10,7 @@ import { getParameter } from '@aws-github-runner/aws-ssm-util';
 import { dispatch } from './runners/dispatch';
 import { EventWrapper } from './types';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ConfigDispatcher, ConfigWebhook, ConfigWebhookEventBridge } from './ConfigLoader';
 
 const event: APIGatewayEvent = {
   body: JSON.stringify(''),
@@ -56,6 +57,15 @@ const event: APIGatewayEvent = {
   },
 };
 
+const eventV2SourceIp = {
+  ...event,
+  requestContext: {
+    http: {
+      sourceIp: '2606:50c0::1',
+    },
+  },
+} as unknown as APIGatewayEvent;
+
 const context: Context = {
   awsRequestId: '1',
   callbackWaitsForEmptyEventLoop: false,
@@ -88,6 +98,10 @@ describe('Test webhook lambda wrapper.', () => {
     const mockedGet = vi.mocked(getParameter);
     mockedGet.mockResolvedValue('["abc"]');
     vi.clearAllMocks();
+    ConfigWebhook.reset();
+    ConfigWebhookEventBridge.reset();
+    ConfigDispatcher.reset();
+    delete process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS;
   });
 
   describe('Test webhook lambda wrapper.', () => {
@@ -118,6 +132,58 @@ describe('Test webhook lambda wrapper.', () => {
       const result = await directWebhook(event, context);
       expect(result).toMatchObject({ body: 'Check the Lambda logs for the error details.', statusCode: 500 });
       expect(logSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('Allows matching IPv4 source IPs.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["127.0.0.0/8"]';
+      const mock = vi.mocked(publishForRunners);
+      mock.mockResolvedValue({ body: 'test', statusCode: 200 });
+
+      const result = await directWebhook(event, context);
+
+      expect(result).toEqual({ body: 'test', statusCode: 200 });
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it('Rejects non-matching IPv4 source IPs.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["192.30.252.0/22"]';
+      const mock = vi.mocked(publishForRunners);
+      mock.mockResolvedValue({ body: 'test', statusCode: 200 });
+
+      const result = await directWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(mock).not.toHaveBeenCalled();
+    });
+
+    it('Rejects requests without a source IP when filtering is enabled.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["127.0.0.0/8"]';
+      const mock = vi.mocked(publishForRunners);
+      const eventWithoutSourceIp = {
+        ...event,
+        requestContext: {
+          ...event.requestContext,
+          identity: {
+            ...event.requestContext.identity,
+            sourceIp: null,
+          },
+        },
+      };
+
+      const result = await directWebhook(eventWithoutSourceIp, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(mock).not.toHaveBeenCalled();
+    });
+
+    it('Fails closed when the CIDR allowlist is invalid.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["192.30.252.0/99"]';
+      const mock = vi.mocked(publishForRunners);
+
+      const result = await directWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Webhook source CIDR allowlist is invalid.', statusCode: 500 });
+      expect(mock).not.toHaveBeenCalled();
     });
   });
 
@@ -155,6 +221,28 @@ describe('Test webhook lambda wrapper.', () => {
       const result = await eventBridgeWebhook(event, context);
       expect(result).toMatchObject({ body: 'Check the Lambda logs for the error details.', statusCode: 500 });
       expect(logSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('Allows matching IPv6 source IPs.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["2606:50c0::/32"]';
+      const mock = vi.mocked(publishOnEventBridge);
+      mock.mockResolvedValue({ body: 'test', statusCode: 200 });
+
+      const result = await eventBridgeWebhook(eventV2SourceIp, context);
+
+      expect(result).toEqual({ body: 'test', statusCode: 200 });
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it('Rejects non-matching IPv6 source IPs.', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["2a0a:a440::/29"]';
+      const mock = vi.mocked(publishOnEventBridge);
+      mock.mockResolvedValue({ body: 'test', statusCode: 200 });
+
+      const result = await eventBridgeWebhook(eventV2SourceIp, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(mock).not.toHaveBeenCalled();
     });
   });
 

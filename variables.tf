@@ -581,6 +581,12 @@ variable "repository_white_list" {
   default     = []
 }
 
+variable "webhook_allowed_source_cidrs" {
+  description = "List of source CIDR ranges allowed to call the webhook. Leave empty to disable source IP filtering."
+  type        = list(string)
+  default     = []
+}
+
 variable "delay_webhook_event" {
   description = "The number of seconds the event accepted by the webhook is invisible on the queue before the scale up lambda will receive the event."
   type        = number

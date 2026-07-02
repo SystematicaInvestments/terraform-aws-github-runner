@@ -124,7 +124,7 @@ module "runners" {
 
   metrics = var.metrics
 
-  http_proxy           = var.http_proxy
-  no_proxy             = var.no_proxy
-  restricted_github    = var.restricted_github
+  http_proxy        = var.http_proxy
+  no_proxy          = var.no_proxy
+  restricted_github = var.restricted_github
 }

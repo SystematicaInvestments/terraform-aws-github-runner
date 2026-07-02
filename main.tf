@@ -138,9 +138,10 @@ module "webhook" {
   logging_kms_key_id                            = var.logging_kms_key_id
   log_class                                     = var.log_class
 
-  role_path                 = var.role_path
-  role_permissions_boundary = var.role_permissions_boundary
-  repository_white_list     = var.repository_white_list
+  role_path                    = var.role_path
+  role_permissions_boundary    = var.role_permissions_boundary
+  repository_white_list        = var.repository_white_list
+  webhook_allowed_source_cidrs = var.webhook_allowed_source_cidrs
 
   lambda_subnet_ids         = var.lambda_subnet_ids
   lambda_security_group_ids = var.lambda_security_group_ids
