@@ -889,3 +889,26 @@ variable "use_dedicated_host" {
   type        = bool
   default     = false
 }
+
+variable "http_proxy" {
+  description = "HTTP proxy URL for scale-up and scale-down Lambda functions. Configure the EC2 runner proxy through userdata_pre_install. Embedded credentials are not allowed."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.http_proxy == null ? true : can(regex("^https?://[^/@[:space:]]+(:[0-9]+)?/?$", var.http_proxy))
+    error_message = "http_proxy must be an HTTP(S) proxy URL without embedded credentials."
+  }
+}
+
+variable "no_proxy" {
+  description = "Comma-separated list of hosts and domains excluded by the scale-up and scale-down Lambda proxy configuration."
+  type        = string
+  default     = null
+}
+
+variable "restricted_github" {
+  description = "When true, the SSM housekeeper Lambda skips VPC placement."
+  type        = bool
+  default     = true
+}

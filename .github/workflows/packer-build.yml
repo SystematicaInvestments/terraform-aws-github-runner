@@ -23,6 +23,7 @@ env:
 jobs:
   verify_packer:
     name: Verify packer
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     container:
       image: index.docker.io/hashicorp/packer@sha256:12c441b8a3994e7df9f0e2692d9298f14c387e70bcc06139420977dbf80a137b # 1.11.2

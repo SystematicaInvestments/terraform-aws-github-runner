@@ -26,13 +26,14 @@ variable "config" {
       destination_arn = string
       format          = string
     }), null)
-    repository_white_list    = optional(list(string), [])
-    queue_selection_strategy = optional(string, "first")
-    kms_key_arn              = optional(string, null)
-    log_level                = optional(string, "info")
-    lambda_runtime           = optional(string, "nodejs24.x")
-    aws_partition            = optional(string, "aws")
-    lambda_architecture      = optional(string, "arm64")
+    repository_white_list        = optional(list(string), [])
+    webhook_allowed_source_cidrs = optional(list(string), [])
+    queue_selection_strategy     = optional(string, "first")
+    kms_key_arn                  = optional(string, null)
+    log_level                    = optional(string, "info")
+    lambda_runtime               = optional(string, "nodejs24.x")
+    aws_partition                = optional(string, "aws")
+    lambda_architecture          = optional(string, "arm64")
     github_app_parameters = object({
       webhook_secret = map(string)
     })
@@ -50,4 +51,9 @@ variable "config" {
     }))
     accept_events = optional(list(string), null)
   })
+
+  validation {
+    condition     = alltrue([for cidr in var.config.webhook_allowed_source_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "Each webhook source must be a valid IPv4 or IPv6 CIDR range."
+  }
 }

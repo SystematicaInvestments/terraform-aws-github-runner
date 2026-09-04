@@ -136,6 +136,17 @@ variable "repository_white_list" {
   default     = []
 }
 
+variable "webhook_allowed_source_cidrs" {
+  description = "List of source CIDR ranges allowed to call the webhook. Leave empty to disable source IP filtering."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.webhook_allowed_source_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "Each webhook source must be a valid IPv4 or IPv6 CIDR range."
+  }
+}
+
 variable "queue_selection_strategy" {
   description = "Strategy used to pick a queue when multiple runner configurations match a job equally well. `first` keeps the historical deterministic behaviour (the first matching queue by priority). `random` spreads jobs across the matching queues to avoid concentrating load on a single one. `all` scales up one runner per matching queue and lets the first to become available take the job (favouring speed over cost; this multiplies instance launches and runner registrations per job)."
   type        = string
@@ -245,4 +256,10 @@ EOF
     enable        = optional(bool, false)
     accept_events = optional(list(string), null)
   })
+}
+
+variable "restricted_github" {
+  description = "When true, webhook Lambdas skip VPC placement."
+  type        = bool
+  default     = true
 }

@@ -23,6 +23,7 @@ resource "aws_lambda_function" "scale_up" {
   memory_size                    = var.lambda_scale_up_memory_size
   tags                           = merge(local.tags, var.lambda_tags)
   architectures                  = [var.lambda_architecture]
+  layers                         = var.http_proxy != null ? [aws_lambda_layer_version.barracuda_ca[0].arn] : []
   environment {
     variables = {
       AMI_ID_SSM_PARAMETER_NAME                 = local.ami_id_ssm_parameter_name
@@ -66,11 +67,19 @@ resource "aws_lambda_function" "scale_up" {
       SCALE_ERRORS                              = jsonencode(var.scale_errors)
       JOB_RETRY_CONFIG                          = jsonencode(local.job_retry_config)
       USE_DEDICATED_HOST                        = var.use_dedicated_host
+      HTTP_PROXY                                = var.http_proxy != null ? var.http_proxy : ""
+      HTTPS_PROXY                               = var.http_proxy != null ? var.http_proxy : ""
+      http_proxy                                = var.http_proxy != null ? var.http_proxy : ""
+      https_proxy                               = var.http_proxy != null ? var.http_proxy : ""
+      NO_PROXY                                  = var.no_proxy != null ? var.no_proxy : ""
+      no_proxy                                  = var.no_proxy != null ? var.no_proxy : ""
+      NODE_USE_ENV_PROXY                        = var.http_proxy != null ? "1" : "0"
+      NODE_EXTRA_CA_CERTS                       = var.http_proxy != null ? "/opt/barracuda_ca.crt" : ""
     }
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && var.lambda_security_group_ids != null ? [true] : []
+    for_each = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
@@ -153,7 +162,7 @@ resource "aws_iam_role_policy" "service_linked_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "scale_up_vpc_execution_role" {
-  count      = length(var.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 ? 1 : 0
   role       = aws_iam_role.scale_up.name
   policy_arn = "arn:${var.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }

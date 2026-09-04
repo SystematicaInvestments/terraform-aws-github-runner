@@ -16,6 +16,7 @@ permissions:
 jobs:
   docs:
     name: Auto update terraform docs
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     permissions:
       contents: write # for terraform-docs/gh-actions to commit documentation updates
@@ -83,7 +84,7 @@ jobs:
         with:
           find-dir: .
           git-commit-message: "docs: auto update terraform docs"
-          git-push: ${{ github.ref != 'refs/heads/main' || github.repository_owner != 'github-aws-runners' }}
+          git-push: false
 
       # change docs via PR in case of locked main branch
       - name: Create Pull Request (main branch only)
@@ -101,6 +102,7 @@ jobs:
 
   deploy-pages:
     name: Deploy documentation to GitHub Pages
+    if: github.repository_owner == 'github-aws-runners'
     needs: [docs]
     runs-on: ubuntu-latest
     permissions:

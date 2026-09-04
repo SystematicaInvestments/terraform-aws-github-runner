@@ -39,6 +39,8 @@ module "runner_binaries" {
   aws_partition             = var.aws_partition
 
   lambda_principals = var.lambda_principals
+
+  restricted_github = var.restricted_github
 }
 locals {
   runner_binaries_by_os_and_arch_map = {

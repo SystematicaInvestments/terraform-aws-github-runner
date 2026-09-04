@@ -53,7 +53,7 @@ resource "aws_lambda_function" "dispatcher" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.config.lambda_subnet_ids != null && var.config.lambda_security_group_ids != null ? [true] : []
+    for_each = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? [true] : []
     content {
       security_group_ids = var.config.lambda_security_group_ids
       subnet_ids         = var.config.lambda_subnet_ids
@@ -103,7 +103,7 @@ resource "aws_iam_role_policy" "dispatcher_logging" {
 }
 
 resource "aws_iam_role_policy_attachment" "dispatcher_vpc_execution_role" {
-  count      = length(var.config.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? 1 : 0
   role       = aws_iam_role.dispatcher_lambda.name
   policy_arn = "arn:${var.config.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }

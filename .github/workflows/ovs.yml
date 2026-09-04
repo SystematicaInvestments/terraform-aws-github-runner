@@ -12,6 +12,7 @@ permissions: {}
 
 jobs:
   scan-pr:
+    if: github.repository_owner == 'github-aws-runners'
     permissions:
       actions: read            # Required to upload SARIF file to CodeQL
       security-events: write   # Require writing security events to upload

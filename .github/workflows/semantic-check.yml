@@ -16,6 +16,7 @@ permissions:
 jobs:
   main:
     name: Semantic Commit Message Check
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)

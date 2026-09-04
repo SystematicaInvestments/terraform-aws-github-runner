@@ -259,3 +259,9 @@ variable "lambda_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "restricted_github" {
+  description = "When true, the runner-binaries-syncer Lambda skips VPC placement."
+  type        = bool
+  default     = true
+}

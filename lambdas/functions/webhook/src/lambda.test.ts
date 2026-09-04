@@ -10,6 +10,7 @@ import { getParameter } from '@aws-github-runner/aws-ssm-util';
 import { dispatch } from './runners/dispatch';
 import { EventWrapper } from './types';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ConfigDispatcher, ConfigWebhook, ConfigWebhookEventBridge } from './ConfigLoader';
 
 const event: APIGatewayEvent = {
   body: JSON.stringify(''),
@@ -83,6 +84,10 @@ vi.mock('@aws-github-runner/aws-ssm-util');
 
 describe('Test webhook lambda wrapper.', () => {
   beforeEach(() => {
+    ConfigWebhook.reset();
+    ConfigWebhookEventBridge.reset();
+    ConfigDispatcher.reset();
+    delete process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS;
     // We mock all SSM request to resolve to a non empty array. Since we mock all implemeantions
     // relying on the config object that is enough to test the handlers.
     const mockedGet = vi.mocked(getParameter);
@@ -101,6 +106,15 @@ describe('Test webhook lambda wrapper.', () => {
 
       const result = await directWebhook(event, context);
       expect(result).toEqual({ body: 'test', statusCode: 200 });
+    });
+
+    it('rejects a request outside the configured source CIDRs', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["192.30.252.0/22"]';
+
+      const result = await directWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(publishForRunners).not.toHaveBeenCalled();
     });
 
     it('An expected error, resolve.', async () => {
@@ -136,6 +150,15 @@ describe('Test webhook lambda wrapper.', () => {
 
       const result = await eventBridgeWebhook(event, context);
       expect(result).toEqual({ body: 'test', statusCode: 200 });
+    });
+
+    it('rejects a request outside the configured source CIDRs', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["2a0a:a440::/29"]';
+
+      const result = await eventBridgeWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(publishOnEventBridge).not.toHaveBeenCalled();
     });
 
     it('Reject events .', async () => {

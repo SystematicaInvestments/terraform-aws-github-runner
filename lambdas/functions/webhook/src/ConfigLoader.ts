@@ -134,12 +134,14 @@ abstract class MatcherAwareConfig extends BaseConfig {
 
 export class ConfigWebhook extends MatcherAwareConfig {
   repositoryAllowList: string[] = [];
+  webhookAllowedSourceCidrs: string[] = [];
   webhookSecret: string = '';
   workflowJobEventSecondaryQueue: string = '';
 
   async loadConfig(): Promise<void> {
     this.loadEnvVar(process.env.REPOSITORY_ALLOW_LIST, 'repositoryAllowList', []);
     this.loadEnvVar(process.env.QUEUE_SELECTION_STRATEGY, 'queueSelectionStrategy', 'first');
+    this.loadEnvVar(process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS, 'webhookAllowedSourceCidrs', []);
 
     await Promise.all([
       this.loadMatcherConfig(process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH),
@@ -155,11 +157,13 @@ export class ConfigWebhook extends MatcherAwareConfig {
 export class ConfigWebhookEventBridge extends BaseConfig {
   eventBusName: string | undefined;
   allowedEvents: string[] = [];
+  webhookAllowedSourceCidrs: string[] = [];
   webhookSecret: string = '';
 
   async loadConfig(): Promise<void> {
     this.loadEnvVar(process.env.ACCEPT_EVENTS, 'allowedEvents', []);
     this.loadEnvVar(process.env.EVENT_BUS_NAME, 'eventBusName');
+    this.loadEnvVar(process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS, 'webhookAllowedSourceCidrs', []);
     await this.loadParameter(process.env.PARAMETER_GITHUB_APP_WEBHOOK_SECRET, 'webhookSecret');
 
     validateEventBusName(this);

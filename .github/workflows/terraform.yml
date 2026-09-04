@@ -18,6 +18,7 @@ env:
 jobs:
   verify_module:
     name: Verify module
+    if: github.repository_owner == 'github-aws-runners'
     strategy:
       matrix:
         terraform: ["1.5.6", "latest"]
@@ -75,6 +76,7 @@ jobs:
 
   verify_modules:
     name: Verify modules
+    if: github.repository_owner == 'github-aws-runners'
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +146,7 @@ jobs:
 
   verify_examples:
     name: Verify examples
+    if: github.repository_owner == 'github-aws-runners'
     strategy:
       fail-fast: false
       matrix:
@@ -209,6 +212,7 @@ jobs:
 
   terraform_test:
     name: Terraform test
+    if: github.repository_owner == 'github-aws-runners'
     strategy:
       fail-fast: false
       matrix:

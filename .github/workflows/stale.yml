@@ -12,6 +12,7 @@ permissions: {}
 jobs:
   stale:
     name: Mark stale issues and PRs
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     permissions:
       issues: write # for actions/stale to close stale issues

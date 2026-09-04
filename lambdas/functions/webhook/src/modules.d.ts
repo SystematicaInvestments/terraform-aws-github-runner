@@ -7,6 +7,7 @@ declare namespace NodeJS {
     QUEUE_SELECTION_STRATEGY: string;
     REPOSITORY_ALLOW_LIST: string;
     RUNNER_LABELS: string;
+    WEBHOOK_ALLOWED_SOURCE_CIDRS: string;
     ACCEPT_EVENTS: string;
   }
 }

@@ -26,6 +26,7 @@ resource "aws_lambda_function" "webhook" {
         POWERTOOLS_TRACER_CAPTURE_ERROR          = var.config.tracing_config.capture_error
         PARAMETER_GITHUB_APP_WEBHOOK_SECRET      = var.config.github_app_parameters.webhook_secret.name
         REPOSITORY_ALLOW_LIST                    = jsonencode(var.config.repository_white_list)
+        WEBHOOK_ALLOWED_SOURCE_CIDRS             = jsonencode(var.config.webhook_allowed_source_cidrs)
         QUEUE_SELECTION_STRATEGY                 = var.config.queue_selection_strategy
         PARAMETER_RUNNER_MATCHER_CONFIG_PATH     = join(":", [for p in var.config.ssm_parameter_runner_matcher_config : p.name])
         PARAMETER_RUNNER_MATCHER_VERSION         = join(":", [for p in var.config.ssm_parameter_runner_matcher_config : p.version]) # enforce cold start after Changes in SSM parameter
@@ -34,7 +35,7 @@ resource "aws_lambda_function" "webhook" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.config.lambda_subnet_ids != null && var.config.lambda_security_group_ids != null ? [true] : []
+    for_each = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? [true] : []
     content {
       security_group_ids = var.config.lambda_security_group_ids
       subnet_ids         = var.config.lambda_subnet_ids
@@ -108,7 +109,7 @@ resource "aws_iam_role_policy" "webhook_logging" {
 }
 
 resource "aws_iam_role_policy_attachment" "webhook_vpc_execution_role" {
-  count      = length(var.config.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? 1 : 0
   role       = aws_iam_role.webhook_lambda.name
   policy_arn = "arn:${var.config.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }

@@ -119,6 +119,7 @@ describe('ConfigLoader Tests', () => {
       const config: ConfigWebhook = await ConfigWebhook.load();
 
       expect(config.repositoryAllowList).toEqual(['repo1', 'repo2']);
+      expect(config.webhookAllowedSourceCidrs).toEqual([]);
       expect(config.matcherConfig).toEqual(matcherConfig);
       expect(config.webhookSecret).toBe('secret');
     });
@@ -149,9 +150,26 @@ describe('ConfigLoader Tests', () => {
       const config: ConfigWebhook = await ConfigWebhook.load();
 
       expect(config.repositoryAllowList).toEqual([]);
+      expect(config.webhookAllowedSourceCidrs).toEqual([]);
       expect(config.workflowJobEventSecondaryQueue).toBe('');
       expect(config.matcherConfig).toEqual(matcherConfig);
       expect(config.webhookSecret).toBe('secret');
+    });
+
+    it('loads the configured source CIDRs', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["192.30.252.0/22", "2a0a:a440::/29"]';
+      process.env.PARAMETER_GITHUB_APP_WEBHOOK_SECRET = '/path/to/webhook/secret';
+      process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH = '/path/to/matcher/config';
+      vi.mocked(getParameter).mockImplementation(async (paramPath: string) => {
+        if (paramPath === '/path/to/matcher/config') {
+          return '[{"id":"1","arn":"arn:aws:sqs:queue1","matcherConfig":{"labelMatchers":[["a"]],"exactMatch":true}}]';
+        }
+        return 'secret';
+      });
+
+      const config = await ConfigWebhook.load();
+
+      expect(config.webhookAllowedSourceCidrs).toEqual(['192.30.252.0/22', '2a0a:a440::/29']);
     });
 
     it('should throw error if config loading fails', async () => {
@@ -246,8 +264,21 @@ describe('ConfigLoader Tests', () => {
       const config: ConfigWebhookEventBridge = await ConfigWebhookEventBridge.load();
 
       expect(config.allowedEvents).toEqual(['push', 'pull_request']);
+      expect(config.webhookAllowedSourceCidrs).toEqual([]);
       expect(config.eventBusName).toBe('event-bus');
       expect(config.webhookSecret).toBe('secret');
+    });
+
+    it('loads the configured source CIDRs', async () => {
+      process.env.ACCEPT_EVENTS = '["push", "pull_request"]';
+      process.env.EVENT_BUS_NAME = 'event-bus';
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["185.199.108.0/22", "2606:50c0::/32"]';
+      process.env.PARAMETER_GITHUB_APP_WEBHOOK_SECRET = '/path/to/webhook/secret';
+      vi.mocked(getParameter).mockResolvedValue('secret');
+
+      const config = await ConfigWebhookEventBridge.load();
+
+      expect(config.webhookAllowedSourceCidrs).toEqual(['185.199.108.0/22', '2606:50c0::/32']);
     });
 
     it('should throw error if config loading fails', async () => {

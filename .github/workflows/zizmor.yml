@@ -19,6 +19,7 @@ permissions: {}
 jobs:
   zizmor:
     name: Run zizmor 🌈
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     permissions:
       contents: read

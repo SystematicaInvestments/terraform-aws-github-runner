@@ -15,6 +15,7 @@ permissions:
 jobs:
   release:
     name: Release
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
     permissions:
       contents: write # for release-please-action to create releases and update changelogs

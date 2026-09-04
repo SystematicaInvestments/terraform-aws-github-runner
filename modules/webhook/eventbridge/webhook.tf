@@ -31,13 +31,14 @@ resource "aws_lambda_function" "webhook" {
         ACCEPT_EVENTS                        = jsonencode(var.config.accept_events)
         EVENT_BUS_NAME                       = aws_cloudwatch_event_bus.main.name
         PARAMETER_GITHUB_APP_WEBHOOK_SECRET  = var.config.github_app_parameters.webhook_secret.name
+        WEBHOOK_ALLOWED_SOURCE_CIDRS         = jsonencode(var.config.webhook_allowed_source_cidrs)
         PARAMETER_RUNNER_MATCHER_CONFIG_PATH = join(":", [for p in var.config.ssm_parameter_runner_matcher_config : p.name])
       } : k => v if v != null
     }
   }
 
   dynamic "vpc_config" {
-    for_each = var.config.lambda_subnet_ids != null && var.config.lambda_security_group_ids != null ? [true] : []
+    for_each = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? [true] : []
     content {
       security_group_ids = var.config.lambda_security_group_ids
       subnet_ids         = var.config.lambda_subnet_ids
@@ -106,7 +107,7 @@ resource "aws_iam_role_policy" "webhook_logging" {
 }
 
 resource "aws_iam_role_policy_attachment" "webhook_vpc_execution_role" {
-  count      = length(var.config.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.config.lambda_subnet_ids) > 0 && length(var.config.lambda_security_group_ids) > 0 ? 1 : 0
   role       = aws_iam_role.webhook_lambda.name
   policy_arn = "arn:${var.config.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }

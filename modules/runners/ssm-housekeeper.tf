@@ -40,7 +40,7 @@ resource "aws_lambda_function" "ssm_housekeeper" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && var.lambda_security_group_ids != null ? [true] : []
+    for_each = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
@@ -109,7 +109,7 @@ resource "aws_iam_role_policy" "ssm_housekeeper_logging" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_housekeeper_vpc_execution_role" {
-  count      = length(var.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? 1 : 0
   role       = aws_iam_role.ssm_housekeeper.name
   policy_arn = "arn:${var.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }

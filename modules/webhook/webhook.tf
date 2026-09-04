@@ -57,8 +57,8 @@ module "direct" {
   source = "./direct"
 
   config = {
-    lambda_subnet_ids                     = var.lambda_subnet_ids,
-    lambda_security_group_ids             = var.lambda_security_group_ids,
+    lambda_subnet_ids                     = var.restricted_github ? [] : var.lambda_subnet_ids,
+    lambda_security_group_ids             = var.restricted_github ? [] : var.lambda_security_group_ids,
     prefix                                = var.prefix,
     tags                                  = var.tags,
     sqs_job_queues_arns                   = [for k, v in var.runner_matcher_config : v.arn]
@@ -75,6 +75,7 @@ module "direct" {
     lambda_s3_object_version              = var.webhook_lambda_s3_object_version,
     lambda_apigateway_access_log_settings = var.webhook_lambda_apigateway_access_log_settings,
     repository_white_list                 = var.repository_white_list,
+    webhook_allowed_source_cidrs          = var.webhook_allowed_source_cidrs,
     queue_selection_strategy              = var.queue_selection_strategy,
     kms_key_arn                           = var.kms_key_arn,
     log_level                             = var.log_level,
@@ -100,8 +101,8 @@ module "eventbridge" {
   source = "./eventbridge"
 
   config = {
-    lambda_subnet_ids                     = var.lambda_subnet_ids,
-    lambda_security_group_ids             = var.lambda_security_group_ids,
+    lambda_subnet_ids                     = var.restricted_github ? [] : var.lambda_subnet_ids,
+    lambda_security_group_ids             = var.restricted_github ? [] : var.lambda_security_group_ids,
     prefix                                = var.prefix,
     tags                                  = var.tags,
     sqs_job_queues_arns                   = [for k, v in var.runner_matcher_config : v.arn]
@@ -118,6 +119,7 @@ module "eventbridge" {
     lambda_s3_object_version              = var.webhook_lambda_s3_object_version,
     lambda_apigateway_access_log_settings = var.webhook_lambda_apigateway_access_log_settings,
     repository_white_list                 = var.repository_white_list,
+    webhook_allowed_source_cidrs          = var.webhook_allowed_source_cidrs,
     queue_selection_strategy              = var.queue_selection_strategy,
     kms_key_arn                           = var.kms_key_arn,
     log_level                             = var.log_level,
