@@ -50,18 +50,16 @@ echo OS: $os_id
 # Install libicu on non-ubuntu, non-debian
 if [[ ! "$os_id" =~ ^(ubuntu|debian).* ]]; then
   max_attempts=5
-  attempt_count=0
-  success=false
-  while [ $success = false ] && [ $attempt_count -le $max_attempts ]; do
-    echo "Attempt $attempt_count/$max_attempts: Installing libicu"
-    dnf install -y libicu
-    if [ $? -eq 0 ]; then
-      success=true
-    else
-      echo "Failed to install libicu"
-      attempt_count=$(( attempt_count + 1 ))
-      sleep 5
+  attempt_count=1
+  while ! dnf install -y libicu; do
+    if [ "$attempt_count" -ge "$max_attempts" ]; then
+      echo "Failed to install libicu after $max_attempts attempts" >&2
+      exit 1
     fi
+
+    attempt_count=$((attempt_count + 1))
+    echo "Failed to install libicu; retrying $attempt_count/$max_attempts" >&2
+    sleep 5
   done
 fi
 
