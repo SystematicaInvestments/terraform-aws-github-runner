@@ -109,7 +109,7 @@ run "plan_with_pool_enabled" {
   assert {
     condition = alltrue([
       startswith(local.user_data, "#!/bin/bash -e"),
-      strcontains(local.user_data, "sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_EXTRA_CA_CERTS"),
+      strcontains(local.user_data, "sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS"),
       strcontains(local.user_data, "if [[ -f \"/opt/github.runner.service.template\" ]]"),
     ])
     error_message = "Runner user data should fail fast and preserve only the required runner environment"

@@ -254,7 +254,7 @@ if [[ "$enable_jit_config" == "false" || $agent_mode != "ephemeral" ]]; then
   else
       extra_flags=""
   fi
-  sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./config.sh $${extra_flags} --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
+  sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./config.sh $${extra_flags} --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
 
   # Tag instance with GitHub runner agent ID for non-JIT runners
   tag_instance_with_runner_id
@@ -266,10 +266,10 @@ if [[ $agent_mode = "ephemeral" ]]; then
 
   if [[ "$enable_jit_config" == "true" ]]; then
     echo "Starting with JIT config"
-    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh --jitconfig $${config}
+    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh --jitconfig $${config}
   else
     echo "Starting without JIT config"
-    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh
+    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh
   fi
   echo "Runner has finished"
 else
