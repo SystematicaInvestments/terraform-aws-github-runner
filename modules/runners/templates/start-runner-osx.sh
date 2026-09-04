@@ -49,6 +49,9 @@ cleanup() {
 
 trap 'cleanup $?' EXIT
 
+# IMDS and runner registration tokens are credentials. Never expose them in
+# user-data logs, even when debug logging enabled tracing earlier in bootstrap.
+set +x
 echo "Retrieving TOKEN from AWS API"
 token=$(curl -f -X PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 180" || true)

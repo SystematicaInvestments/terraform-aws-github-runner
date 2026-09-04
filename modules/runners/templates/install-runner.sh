@@ -26,10 +26,13 @@ if [[ -n "$RUNNER_TARBALL_URL" ]]; then
   echo "Downloading the GH Action runner from $RUNNER_TARBALL_URL to $file_name"
   curl -s -o $file_name -L "$RUNNER_TARBALL_URL"
 else
+  # The IMDS token is a credential. Do not expose it when user-data debug
+  # logging enabled shell tracing earlier in the bootstrap.
+  set +x
   echo "Retrieving TOKEN from AWS API"
-  token="$(curl -s -f -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180")"
+  token="$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180")"
 
-  region="$(curl -s -f -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
+  region="$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
   echo "Retrieved REGION from AWS API ($region)"
 
   echo "Downloading the GH Action runner from s3 bucket $s3_location"
