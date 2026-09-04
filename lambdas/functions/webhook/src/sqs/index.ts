@@ -1,9 +1,12 @@
 import { SQS, SendMessageCommandInput } from '@aws-sdk/client-sqs';
 import { WorkflowJobEvent } from '@octokit/webhooks-types';
-import { createChildLogger, getTracedAWSV3Client } from '@terraform-aws-github-runner/aws-powertools-util';
-import { Config } from '../ConfigResolver';
+import { createChildLogger, getTracedAWSV3Client } from '@aws-github-runner/aws-powertools-util';
+
+export type { MatcherConfig, RunnerConfig, RunnerMatcherConfig } from '@aws-github-runner/compute-providers';
 
 const logger = createChildLogger('sqs');
+
+const sqsClientsByRegion = new Map<string, SQS>();
 
 export interface ActionRequestMessage {
   id: number;
@@ -12,21 +15,8 @@ export interface ActionRequestMessage {
   repositoryOwner: string;
   installationId: number;
   queueId: string;
-  queueFifo: boolean;
-}
-
-export interface MatcherConfig {
-  labelMatchers: string[][];
-  exactMatch: boolean;
-}
-
-export type RunnerConfig = RunnerMatcherConfig[];
-
-export interface RunnerMatcherConfig {
-  matcherConfig: MatcherConfig;
-  id: string;
-  arn: string;
-  fifo: boolean;
+  repoOwnerType: string;
+  labels?: string[];
 }
 
 export interface GithubWorkflowEvent {
@@ -34,7 +24,8 @@ export interface GithubWorkflowEvent {
 }
 
 export const sendActionRequest = async (message: ActionRequestMessage): Promise<void> => {
-  const sqs = getTracedAWSV3Client(new SQS({ region: process.env.AWS_REGION }));
+  const region = getRegionFromQueueUrl(message.queueId) ?? process.env.AWS_REGION;
+  const sqs = getSqsClient(region);
 
   const sqsMessage: SendMessageCommandInput = {
     QueueUrl: message.queueId,
@@ -42,25 +33,35 @@ export const sendActionRequest = async (message: ActionRequestMessage): Promise<
   };
 
   logger.debug(`sending message to SQS: ${JSON.stringify(sqsMessage)}`);
-  if (message.queueFifo) {
-    sqsMessage.MessageGroupId = String(message.id);
-  }
 
   await sqs.sendMessage(sqsMessage);
 };
 
-export async function sendWebhookEventToWorkflowJobQueue(message: GithubWorkflowEvent, config: Config): Promise<void> {
-  if (config.workflowJobEventSecondaryQueue != undefined) {
-    const sqs = new SQS({ region: process.env.AWS_REGION });
-    const sqsMessage: SendMessageCommandInput = {
-      QueueUrl: String(config.workflowJobEventSecondaryQueue),
-      MessageBody: JSON.stringify(message),
-    };
-    logger.debug(`Sending Webhook events to the workflow job queue: ${config.workflowJobEventSecondaryQueue}`);
-    try {
-      await sqs.sendMessage(sqsMessage);
-    } catch (e) {
-      logger.warn(`Error in sending webhook events to workflow job queue: ${(e as Error).message}`);
-    }
+function getSqsClient(region: string | undefined): SQS {
+  if (!region) {
+    return getTracedAWSV3Client(new SQS({}));
   }
+
+  const cached = sqsClientsByRegion.get(region);
+  if (cached) {
+    return cached;
+  }
+
+  const client = getTracedAWSV3Client(new SQS({ region }));
+  sqsClientsByRegion.set(region, client);
+  return client;
+}
+
+function getRegionFromQueueUrl(queueUrl: string): string | undefined {
+  try {
+    const url = new URL(queueUrl);
+    const parts = url.hostname.split('.');
+    if (parts.length >= 3 && parts[0] === 'sqs') {
+      return parts[1];
+    }
+  } catch {
+    // Ignore invalid queue URLs and fall back to the default region.
+  }
+
+  return undefined;
 }

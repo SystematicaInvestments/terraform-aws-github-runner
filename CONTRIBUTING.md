@@ -1,31 +1,28 @@
-# Contributing to Forest Terraform
+# Contributing to this project
 
-We'd love for you to contribute to our source code and to make the Forest even better than it is today! Here are the guidelines we'd like you to follow:
+We'd love for you to contribute to our source code and to make this project even better than it is today! Here are the guidelines we'd like you to follow:
 
 * [Question or Problem?](#question)
 * [Issues and Bugs](#issue)
 * [Feature Requests](#feature)
 * [Submission Guidelines](#submit)
-* [Further Info](#info)
 
 ## <a name="question"></a> Got a Question or Problem?
 
-If you have questions about how to use the Forest, please direct these to the [Slack group / philips-software][slack].
-
-[![Slack](https://philips-software-slackin.now.sh/badge.svg)](https://philips-software-slackin.now.sh)
+If you have questions about how to use aws-github-runners, please direct these to [Discord](https://discord.gg/bxgXW8jJGh)
 
 ## <a name="issue"></a> Found an Issue?
 
-If you find a bug in the source code or a mistake in the documentation, you can help us by submitting an issue to our [Github Repository][github]. Even better you can submit a Pull Request with a fix.
+If you find a bug in the source code or a mistake in the documentation, you can help us by submitting an issue to our [GitHub Repository][github]. Even better you can submit a Pull Request with a fix.
 
 **Please see the [Submission Guidelines](#submit) below.**
 
 ## <a name="feature"></a> Want a Feature?
 
-You can request a new feature by submitting an issue to our [Github Repository][github]. If you would like to implement a new feature then consider what kind of change it is:
+You can request a new feature by submitting an issue to our [GitHub Repository][github]. If you would like to implement a new feature then consider what kind of change it is:
 
 * **Major Changes** that you wish to contribute to the project should be discussed first on our [Slack group][slack] so that we can better coordinate our efforts, prevent duplication of work, and help you to craft the change so that it is successfully accepted into the project.
-* **Small Changes** can be crafted and submitted to the [Github Repository][github] as a Pull Request.
+* **Small Changes** can be crafted and submitted to the [GitHub Repository][github] as a Pull Request.
 
 ## <a name="docs"></a> Want a Doc Fix?
 
@@ -43,7 +40,7 @@ If your issue appears to be a bug, and hasn't been reported, open a new issue. H
 
 * **Overview of the Issue** - if an error is being thrown a non-minified stack trace helps
 * **Motivation for or Use Case** - explain why this is a bug for you
-* **Forest Version(s)** - is it a regression?
+* **Project Version(s)** - is it a regression?
 * **Reproduce the Error** - try to describe how to reproduce the error
 * **Related Issues** - has a similar issue been reported before?
 * **Suggest a Fix** - if you can't fix the bug yourself, perhaps you can point to what might be
@@ -71,7 +68,6 @@ Before you submit your pull request consider the following guidelines:
         terraform init
         ```
 
-* For updating docs, you have to enable GitHub actions on your forked repository. Simply go to the tab Actions and enable actions.
 * Commit your changes using a descriptive commit message:
 
     ```shell
@@ -93,19 +89,19 @@ Before you submit your pull request consider the following guidelines:
         cd ..
         ```
 
-* Push your branch to Github:
+* Push your branch to GitHub:
 
     ```shell
     git push origin my-fix-branch
     ```
 
-In Github, send a pull request to original main branch: f.e. `terraform-aws-github-runner:main`.
+In GitHub, send a pull request to original main branch: f.e. `terraform-aws-github-runner:main`.
 If we suggest changes, then:
 
 * Make the required updates.
 * Re-run the test suite to ensure tests are still passing.
 * Commit your changes to your branch (e.g. `my-fix-branch`).
-* Push the changes to your Github repository (this will update your Pull Request).
+* Push the changes to your GitHub repository (this will update your Pull Request).
 
 If the PR gets too outdated we may ask you to rebase and force push to update the PR:
 
@@ -114,7 +110,7 @@ git rebase main -i
 git push origin my-fix-branch -f
 ```
 
-_WARNING: Squashing or reverting commits and force-pushing thereafter may remove Github comments on code that were previously made by you or others in your commits. Avoid any form of rebasing unless necessary.
+_WARNING: Squashing or reverting commits and force-pushing thereafter may remove GitHub comments on code that were previously made by you or others in your commits. Avoid any form of rebasing unless necessary.
 
 That's it! Thank you for your contribution!
 
@@ -123,7 +119,7 @@ That's it! Thank you for your contribution!
 After your pull request is merged, you can safely delete your branch and pull the changes
 from the main (upstream) repository:
 
-* Delete the remote branch on Github either through the Github web UI or your local shell as follows:
+* Delete the remote branch on GitHub either through the GitHub web UI or your local shell as follows:
 
     ```shell
     git push origin --delete my-fix-branch
@@ -147,14 +143,6 @@ from the main (upstream) repository:
     git pull --ff upstream main
     ```
 
-## <a name="info"></a> Info
-
-For more info, please reach out to the team on [Slack group / philips-software][slack] in the #forest channel.
-
-Use the badge to sign-up.
-
-[![Slack](https://philips-software-slackin.now.sh/badge.svg)](https://philips-software-slackin.now.sh)
 
 [contribute]: CONTRIBUTING.md
-[github]: https://github.com/philips-labs/terraform-aws-github-runner/issues
-[slack]: https://join.slack.com/t/philips-software/shared_invite/zt-xecw65v5-i1531hGP~mdVwgxLFx7ckg
+[github]: https://github.com/github-aws-runners/terraform-aws-github-runner/issues

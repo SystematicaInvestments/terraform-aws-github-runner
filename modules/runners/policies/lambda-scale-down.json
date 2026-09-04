@@ -14,7 +14,9 @@
     {
       "Effect": "Allow",
       "Action": [
-        "ec2:TerminateInstances"
+        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
       ],
       "Resource": [
         "*"
@@ -28,26 +30,26 @@
     {
       "Effect": "Allow",
       "Action": [
-        "ec2:TerminateInstances"
+        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
       ],
       "Resource": [
         "*"
       ],
       "Condition": {
         "StringEquals": {
-          "ec2:ResourceTag/Application": "github-action-runner"
+          "ec2:ResourceTag/gh:environment": "${environment}"
         }
       }
     },
     {
       "Effect": "Allow",
       "Action": [
-        "ssm:GetParameter"
+        "ssm:GetParameter",
+        "ssm:GetParameters"
       ],
-      "Resource": [
-        "${github_app_key_base64_arn}",
-        "${github_app_id_arn}"
-      ]
+      "Resource": ${github_app_parameter_arns}
 %{ if kms_key_arn != "" ~}
     },
     {

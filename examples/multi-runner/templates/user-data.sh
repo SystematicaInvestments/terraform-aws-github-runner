@@ -12,73 +12,103 @@ set +x
 set -x
 %{ endif }
 
+# Ubuntu's unattended-upgrades and apt-daily services start in the background
+# shortly after boot and can hold /var/lib/dpkg/lock-frontend. The runner
+# installer (install_runner.sh → installdependencies.sh) also needs apt-get;
+# a lock conflict causes dependency installation to fail.
+systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+systemctl mask unattended-upgrades apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+  echo "Waiting for dpkg lock to be released..."
+  sleep 5
+done
+
 ${pre_install}
 
 # Install AWS CLI
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    awscli \
+apt-get -q update
+DEBIAN_FRONTEND=noninteractive apt-get install -q -y \
     build-essential \
+    ca-certificates \
     curl \
     git \
     iptables \
     jq \
+    systemd-container \
     uidmap \
     unzip \
     wget
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+apt-get -q update
+apt-get -q -y install docker-ce docker-ce-cli containerd.io docker-ce-rootless-extras docker-buildx-plugin docker-compose-plugin
+systemctl disable --now docker.socket docker.service
+
+# avoid /tmp, might be mounted no-exec
+curl -fsSL -o "awscliv2.zip" "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+unzip -q awscliv2.zip
+aws/install
+rm -rf aws awscliv2.zip
 
 user_name=ubuntu
 user_id=$(id -ru $user_name)
 
 # install and configure cloudwatch logging agent
-wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
-dpkg -i -E ./amazon-cloudwatch-agent.deb
-amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c ssm:${ssm_key_cloudwatch_agent_config}
+curl -fsSL -o "/tmp/amazon-cloudwatch-agent.deb" https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+dpkg -i -E /tmp/amazon-cloudwatch-agent.deb
+rm -f /tmp/amazon-cloudwatch-agent.deb
+amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c "ssm:${ssm_key_cloudwatch_agent_config}"
 
 # configure systemd for running service in users accounts
-cat >/etc/systemd/user@UID.service <<-EOF
-
-[Unit]
-Description=User Manager for UID %i
-After=user-runtime-dir@%i.service
-Wants=user-runtime-dir@%i.service
-
-[Service]
-LimitNOFILE=infinity
-LimitNPROC=infinity
-User=%i
-PAMName=systemd-user
-Type=notify
-
-[Install]
-WantedBy=default.target
-
+mkdir -p /etc/systemd/system/user-$user_id.slice.d
+cat > /etc/systemd/system/user-$user_id.slice.d/resources.conf <<- EOF
+[Slice]
+TasksMax=infinity
 EOF
-
-echo export XDG_RUNTIME_DIR=/run/user/$user_id >>/home/$user_name/.bashrc
+mkdir -p /home/$user_name/.config/systemd/
+cat > /home/$user_name/.config/systemd/user.conf <<- EOF
+[Manager]
+DefaultLimitNOFILE=infinity
+DefaultLimitNPROC=infinity
+EOF
+chown $user_name:$user_name /home/$user_name/.config/systemd/user.conf /home/$user_name/.config/systemd /home/$user_name/.config/
 
 systemctl daemon-reload
-systemctl enable user@UID.service
-systemctl start user@UID.service
 
-curl -fsSL https://get.docker.com/rootless >>/opt/rootless.sh && chmod 755 /opt/rootless.sh
-su -l $user_name -c /opt/rootless.sh
-echo export DOCKER_HOST=unix:///run/user/$user_id/docker.sock >>/home/$user_name/.bashrc
-echo export PATH=/home/$user_name/bin:$PATH >>/home/$user_name/.bashrc
+echo export XDG_RUNTIME_DIR="/run/user/$user_id" >> "/home/$user_name/.bashrc"
 
 # Run docker service by default
 loginctl enable-linger $user_name
-su -l $user_name -c "systemctl --user enable docker"
+machinectl shell "$user_name@.host" /usr/bin/dockerd-rootless-setuptool.sh install
+echo export DOCKER_HOST="unix:///run/user/$user_id/docker.sock" >> "/home/$user_name/.bashrc"
+echo export PATH="/home/$user_name/bin:$PATH" >> "/home/$user_name/.bashrc"
 
 ${install_runner}
 
 # config runner for rootless docker
 cd /opt/actions-runner/
-echo DOCKER_HOST=unix:///run/user/$user_id/docker.sock >>.env
-echo PATH=/home/$user_name/bin:$PATH >>.env
+echo DOCKER_HOST="unix:///run/user/$user_id/docker.sock" >> .env
+echo PATH="/home/$user_name/bin:$PATH" >> .env
 
 ${post_install}
 
 cd /opt/actions-runner
+
+%{ if hook_job_started != "" }
+cat > /opt/actions-runner/hook_job_started.sh <<'EOF'
+${hook_job_started}
+EOF
+echo ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/actions-runner/hook_job_started.sh | tee -a /opt/actions-runner/.env
+%{ endif }
+
+%{ if hook_job_completed != "" }
+cat > /opt/actions-runner/hook_job_completed.sh <<'EOF'
+${hook_job_completed}
+EOF
+echo ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/actions-runner/hook_job_completed.sh | tee -a /opt/actions-runner/.env
+%{ endif }
 
 ${start_runner}

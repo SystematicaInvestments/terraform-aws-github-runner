@@ -25,7 +25,7 @@ variable "lambda_timeout" {
 }
 
 variable "lambda_memory_size" {
-  description = "Memory size linit in MB of the lambda."
+  description = "Memory size limit in MB of the lambda."
   type        = number
   default     = 256
 }
@@ -52,6 +52,17 @@ variable "logging_kms_key_id" {
   description = "Specifies the kms key id to encrypt the logs with"
   type        = string
   default     = null
+}
+
+variable "log_class" {
+  description = "The log class of the CloudWatch log group. Valid values are `STANDARD` or `INFREQUENT_ACCESS`."
+  type        = string
+  default     = "STANDARD"
+
+  validation {
+    condition     = contains(["STANDARD", "INFREQUENT_ACCESS"], var.log_class)
+    error_message = "`log_class` must be either `STANDARD` or `INFREQUENT_ACCESS`."
+  }
 }
 
 variable "lambda_subnet_ids" {
@@ -117,7 +128,7 @@ variable "lambda_s3_object_version" {
 variable "lambda_runtime" {
   description = "AWS Lambda runtime."
   type        = string
-  default     = "nodejs20.x"
+  default     = "nodejs24.x"
 }
 
 variable "lambda_architecture" {
@@ -155,7 +166,7 @@ variable "cleanup_config" {
     `amiFilters` - Filters to use when searching for AMIs to cleanup. Default filter for images owned by the account and that are available.
     `dryRun` - If true, no AMIs will be deregistered. Default false.
     `launchTemplateNames` - Launch template names to use when searching for AMIs to cleanup. Default no launch templates.
-    `maxItems` - The maximum numer of AMI's tha will be queried for cleanup. Default no maximum.
+    `maxItems` - The maximum number of AMIs that will be queried for cleanup. Default no maximum.
     `minimumDaysOld` - Minimum number of days old an AMI must be to be considered for cleanup. Default 30.
     `ssmParameterNames` - SSM parameter names to use when searching for AMIs to cleanup. This parameter should be set when using SSM to configure the AMI to use. Default no SSM parameters.
   EOF
@@ -191,4 +202,10 @@ variable "state_event_rule_ami_housekeeper" {
     condition     = contains(["ENABLED", "DISABLED", "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS"], var.state_event_rule_ami_housekeeper)
     error_message = "`state_event_rule_ami_housekeeper` value is not valid, valid values are: `ENABLED`, `DISABLED`, `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`."
   }
+}
+
+variable "lambda_tags" {
+  description = "Map of tags that will be added to all the lambda function resources. Note these are additional tags to the default tags."
+  type        = map(string)
+  default     = {}
 }

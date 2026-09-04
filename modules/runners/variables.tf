@@ -1,3 +1,25 @@
+variable "ami" {
+  description = <<EOT
+AMI configuration for the action runner instances. This object allows you to specify all AMI-related settings in one place.
+
+Parameters:
+- `filter`: Map of lists to filter AMIs by various criteria (e.g., { name = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-*"], state = ["available"] })
+- `owners`: List of AMI owners to limit the search. Common values: ["amazon"], ["self"], or specific AWS account IDs
+- `id_ssm_parameter_name`: Name of an SSM parameter containing the AMI ID. If specified, this overrides the AMI filter
+- `id_ssm_parameter_arn`: ARN of an SSM parameter containing the AMI ID. If specified, this overrides both AMI filter and parameter name
+- `kms_key_arn`: Optional KMS key ARN if the AMI is encrypted with a customer managed key
+
+Defaults to null, in which case the module falls back to individual AMI variables (deprecated).
+EOT
+  type = object({
+    filter               = optional(map(list(string)), { state = ["available"] })
+    owners               = optional(list(string), ["amazon"])
+    id_ssm_parameter_arn = optional(string, null)
+    kms_key_arn          = optional(string, null)
+  })
+  default = null
+}
+
 variable "aws_region" {
   description = "AWS region."
   type        = string
@@ -23,6 +45,33 @@ variable "overrides" {
   }
 }
 
+variable "iam_overrides" {
+  description = "This map provides the possibility to override some IAM defaults. The following attributes are supported: `instance_profile_name` overrides the instance profile name used in the launch template. `runner_role_arn` overrides the IAM role ARN used for the runner instances."
+  type = object({
+    override_instance_profile = optional(bool, null)
+    instance_profile_name     = optional(string, null)
+    override_runner_role      = optional(bool, null)
+    runner_role_arn           = optional(string, null)
+  })
+
+  default = {
+    override_instance_profile = false
+    instance_profile_name     = null
+    override_runner_role      = false
+    runner_role_arn           = null
+  }
+
+  validation {
+    condition     = !var.iam_overrides.override_instance_profile || var.iam_overrides.instance_profile_name != null
+    error_message = "instance_profile_name must be provided when override_instance_profile is true."
+  }
+
+  validation {
+    condition     = !var.iam_overrides.override_runner_role || var.iam_overrides.runner_role_arn != null
+    error_message = "runner_role_arn must be provided when override_runner_role is true."
+  }
+}
+
 variable "tags" {
   description = "Map of tags that will be added to created resources. By default resources will be tagged with name."
   type        = map(string)
@@ -45,17 +94,18 @@ variable "s3_runner_binaries" {
 }
 
 variable "block_device_mappings" {
-  description = "The EC2 instance block device configuration. Takes the following keys: `device_name`, `delete_on_termination`, `volume_type`, `volume_size`, `encrypted`, `iops`, `throughput`, `kms_key_id`, `snapshot_id`."
+  description = "The EC2 instance block device configuration. Takes the following keys: `device_name`, `delete_on_termination`, `volume_type`, `volume_size`, `encrypted`, `iops`, `throughput`, `kms_key_id`, `snapshot_id`, `volume_initialization_rate`."
   type = list(object({
-    delete_on_termination = optional(bool, true)
-    device_name           = optional(string, "/dev/xvda")
-    encrypted             = optional(bool, true)
-    iops                  = optional(number)
-    kms_key_id            = optional(string)
-    snapshot_id           = optional(string)
-    throughput            = optional(number)
-    volume_size           = number
-    volume_type           = optional(string, "gp3")
+    delete_on_termination      = optional(bool, true)
+    device_name                = optional(string, "/dev/xvda")
+    encrypted                  = optional(bool, true)
+    iops                       = optional(number)
+    kms_key_id                 = optional(string)
+    snapshot_id                = optional(string)
+    throughput                 = optional(number)
+    volume_initialization_rate = optional(number)
+    volume_size                = number
+    volume_type                = optional(string, "gp3")
   }))
   default = [{
     volume_size = 30
@@ -69,7 +119,7 @@ variable "ebs_optimized" {
 }
 
 variable "instance_target_capacity_type" {
-  description = "Default lifecyle used runner instances, can be either `spot` or `on-demand`."
+  description = "Default lifecycle used runner instances, can be either `spot` or `on-demand`."
   type        = string
   default     = "spot"
 
@@ -80,67 +130,45 @@ variable "instance_target_capacity_type" {
 }
 
 variable "instance_allocation_strategy" {
-  description = "The allocation strategy for spot instances. AWS recommends to use `capacity-optimized` however the AWS default is `lowest-price`."
+  description = "The allocation strategy for creating instances. For spot, AWS recommends `price-capacity-optimized`; for on-demand, use `lowest-price` or `prioritized`. The AWS default is `lowest-price`."
   type        = string
   default     = "lowest-price"
 
   validation {
-    condition     = contains(["lowest-price", "diversified", "capacity-optimized", "capacity-optimized-prioritized", "price-capacity-optimized"], var.instance_allocation_strategy)
+    condition     = contains(["lowest-price", "diversified", "capacity-optimized", "capacity-optimized-prioritized", "price-capacity-optimized", "prioritized"], var.instance_allocation_strategy)
     error_message = "The instance allocation strategy does not match the allowed values."
   }
 }
 
+variable "instance_type_priorities" {
+  description = "A map of instance type to priority for the `prioritized` and `capacity-optimized-prioritized` allocation strategies. Lower numbers mean higher priority. If not provided, priorities are assigned based on the order of `instance_types`."
+  type        = map(number)
+  default     = null
+}
+
 variable "instance_max_spot_price" {
-  description = "Max price price for spot intances per hour. This variable will be passed to the create fleet as max spot price for the fleet."
+  description = "Max price price for spot instances per hour. This variable will be passed to the create fleet as max spot price for the fleet."
   type        = string
   default     = null
 }
 
 variable "runner_os" {
-  description = "The EC2 Operating System type to use for action runner instances (linux,windows)."
+  description = "The EC2 Operating System type to use for action runner instances (linux, osx, windows)."
   type        = string
   default     = "linux"
 
   validation {
-    condition     = contains(["linux", "windows"], var.runner_os)
-    error_message = "Valid values for runner_os are (linux, windows)."
+    condition     = contains(["linux", "osx", "windows"], var.runner_os)
+    error_message = "Valid values for runner_os are (linux, osx, windows)."
   }
 }
 
 variable "instance_types" {
-  description = "List of instance types for the action runner. Defaults are based on runner_os (al2023 for linux and Windows Server Core for win)."
+  description = "List of instance types for the action runner. Defaults are based on runner_os (al2023 for linux, macOS Sequoia for osx, Windows Server Core for win)."
   type        = list(string)
   default     = null
 }
 
-variable "ami_filter" {
-  description = "Map of lists used to create the AMI filter for the action runner AMI."
-  type        = map(list(string))
-  default     = { state = ["available"] }
-  validation {
-    # check the availability of the AMI
-    condition     = contains(keys(var.ami_filter), "state")
-    error_message = "The \"ami_filter\" variable must contain the \"state\" key with the value \"available\"."
-  }
-}
-
-variable "ami_owners" {
-  description = "The list of owners used to select the AMI of action runner instances."
-  type        = list(string)
-  default     = ["amazon"]
-}
-
-variable "ami_id_ssm_parameter_name" {
-  description = "Externally managed SSM parameter (of data type aws:ec2:image) that contains the AMI ID to launch runner instances from. Overrides ami_filter"
-  type        = string
-  default     = null
-}
-
-variable "ami_kms_key_arn" {
-  description = "Optional CMK Key ARN to be used to launch an instance from a shared encrypted AMI"
-  type        = string
-  default     = null
-}
 
 variable "enable_userdata" {
   description = "Should the userdata script be enabled for the runner. Set this to false if you are using your own prebuilt AMI"
@@ -155,7 +183,7 @@ variable "userdata_template" {
 }
 
 variable "userdata_content" {
-  description = "Alternative user-data content, replacing the templated one. By providing your own user_data you have to take care of installing all required software, including the action runner and registering the runner.  Be-aware configuration paramaters in SSM as well as tags are treated as internals. Changes will not trigger a breaking release."
+  description = "Alternative user-data content, replacing the templated one. By providing your own user_data you have to take care of installing all required software, including the action runner and registering the runner.  Be-aware configuration parameters in SSM as well as tags are treated as internals. Changes will not trigger a breaking release."
   type        = string
   default     = null
 }
@@ -172,10 +200,23 @@ variable "userdata_post_install" {
   default     = ""
 }
 
+variable "runner_hook_job_started" {
+  description = "Script to be ran in the runner environment at the beginning of every job"
+  type        = string
+  default     = ""
+}
+
+variable "runner_hook_job_completed" {
+  description = "Script to be ran in the runner environment at the end of every job"
+  type        = string
+  default     = ""
+}
+
 variable "sqs_build_queue" {
   description = "SQS queue to consume accepted build events."
   type = object({
     arn = string
+    url = string
   })
 }
 
@@ -185,10 +226,23 @@ variable "enable_organization_runners" {
 }
 
 variable "github_app_parameters" {
-  description = "Parameter Store for GitHub App Parameters."
+  description = <<-EOF
+    Parameter Store for GitHub App Parameters.
+
+    Supports multiple GitHub Apps for random API rate limit distribution.
+    Each list element corresponds to one GitHub App and is a map containing
+    `name` and `arn` keys referencing SSM parameters. The first element is the
+    primary app (the one whose webhook secret is used for incoming webhook
+    validation). All apps must be installed on the same repositories/organizations.
+
+    The control-plane lambdas (scale-up, scale-down, pool, job-retry) randomly
+    select an app from the list for each GitHub API call, distributing rate
+    limit consumption across all configured apps.
+  EOF
   type = object({
-    key_base64 = map(string)
-    id         = map(string)
+    key_base64      = list(map(string))
+    id              = list(map(string))
+    installation_id = list(object({ name = string, arn = string }))
   })
 }
 
@@ -214,6 +268,12 @@ variable "runner_boot_time_in_minutes" {
   description = "The minimum time for an EC2 runner to boot and register as a runner."
   type        = number
   default     = 5
+}
+
+variable "runner_disable_default_labels" {
+  description = "Disable default labels for the runners (os, architecture and `self-hosted`). If enabled, the runner will only have the extra labels provided in `runner_extra_labels`."
+  type        = bool
+  default     = false
 }
 
 variable "runner_labels" {
@@ -322,6 +382,17 @@ variable "logging_kms_key_id" {
   default     = null
 }
 
+variable "log_class" {
+  description = "The log class of the CloudWatch log groups for the lambda functions. Valid values are `STANDARD` or `INFREQUENT_ACCESS`."
+  type        = string
+  default     = "STANDARD"
+
+  validation {
+    condition     = contains(["STANDARD", "INFREQUENT_ACCESS"], var.log_class)
+    error_message = "`log_class` must be either `STANDARD` or `INFREQUENT_ACCESS`."
+  }
+}
+
 variable "enable_ssm_on_runners" {
   description = "Enable to allow access to the runner instances for debugging purposes via SSM. Note that this adds additional permissions to the runner instances."
   type        = bool
@@ -382,18 +453,19 @@ variable "cloudwatch_config" {
 }
 
 variable "runner_log_files" {
-  description = "(optional) List of logfiles to send to CloudWatch, will only be used if `enable_cloudwatch_agent` is set to true. Object description: `log_group_name`: Name of the log group, `prefix_log_group`: If true, the log group name will be prefixed with `/github-self-hosted-runners/<var.prefix>`, `file_path`: path to the log file, `log_stream_name`: name of the log stream."
+  description = "(optional) List of logfiles to send to CloudWatch, will only be used if `enable_cloudwatch_agent` is set to true. Object description: `log_group_name`: Name of the log group, `prefix_log_group`: If true, the log group name will be prefixed with `/github-self-hosted-runners/<var.prefix>`, `file_path`: path to the log file, `log_stream_name`: name of the log stream, `log_class`: The log class of the log group. Valid values are `STANDARD` or `INFREQUENT_ACCESS`. Defaults to `STANDARD`."
   type = list(object({
     log_group_name   = string
     prefix_log_group = bool
     file_path        = string
     log_stream_name  = string
+    log_class        = optional(string, "STANDARD")
   }))
   default = null
 }
 
 variable "ghes_url" {
-  description = "GitHub Enterprise Server URL. DO NOT SET IF USING PUBLIC GITHUB"
+  description = "GitHub Enterprise Server URL. DO NOT SET IF USING PUBLIC GITHUB..However if you are using GitHub Enterprise Cloud with data-residency (ghe.com), set the endpoint here. Example - https://companyname.ghe.com|"
   type        = string
   default     = null
 }
@@ -538,12 +610,19 @@ variable "pool_lambda_reserved_concurrent_executions" {
 }
 
 variable "pool_config" {
-  description = "The configuration for updating the pool. The `pool_size` to adjust to by the events triggered by the `schedule_expression`. For example you can configure a cron expression for week days to adjust the pool to 10 and another expression for the weekend to adjust the pool to 1."
+  description = "The configuration for updating the pool. The `pool_size` to adjust to by the events triggered by the `schedule_expression`. For example you can configure a cron expression for week days to adjust the pool to 10 and another expression for the weekend to adjust the pool to 1. Use `schedule_expression_timezone ` to override the schedule time zone (defaults to UTC)."
   type = list(object({
-    schedule_expression = string
-    size                = number
+    schedule_expression          = string
+    schedule_expression_timezone = optional(string)
+    size                         = number
   }))
   default = []
+}
+
+variable "pool_include_busy_runners" {
+  description = "Include busy runners in the pool calculation. By default busy runners are not included in the pool."
+  type        = bool
+  default     = false
 }
 
 variable "disable_runner_autoupdate" {
@@ -555,7 +634,7 @@ variable "disable_runner_autoupdate" {
 variable "lambda_runtime" {
   description = "AWS Lambda runtime."
   type        = string
-  default     = "nodejs20.x"
+  default     = "nodejs24.x"
 }
 
 variable "lambda_architecture" {
@@ -589,7 +668,7 @@ variable "ssm_paths" {
 }
 
 variable "runner_name_prefix" {
-  description = "The prefix used for the GitHub runner name. The prefix will be used in the default start script to prefix the instance name when register the runner in GitHub. The value is availabe via an EC2 tag 'ghr:runner_name_prefix'."
+  description = "The prefix used for the GitHub runner name. The prefix will be used in the default start script to prefix the instance name when register the runner in GitHub. The value is available via an EC2 tag 'ghr:runner_name_prefix'."
   type        = string
   default     = ""
   validation {
@@ -620,8 +699,51 @@ variable "credit_specification" {
   }
 }
 
+variable "cpu_options" {
+  description = "The CPU options for the instance. See https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template#cpu-options for details. Note that not all instance types support CPU options, see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-optimize-cpu.html#instance-cpu-options"
+  type = object({
+    core_count            = optional(number)
+    threads_per_core      = optional(number)
+    amd_sev_snp           = optional(string)
+    nested_virtualization = optional(string)
+  })
+  default = null
+
+  validation {
+    condition = var.cpu_options == null ? true : (
+      (var.cpu_options.amd_sev_snp == null || contains(["enabled", "disabled"], var.cpu_options.amd_sev_snp)) &&
+      (var.cpu_options.nested_virtualization == null || contains(["enabled", "disabled"], var.cpu_options.nested_virtualization))
+    )
+    error_message = "When set, cpu_options.amd_sev_snp and cpu_options.nested_virtualization must be one of: enabled, disabled."
+  }
+}
+
+variable "placement" {
+  description = "The placement options for the instance. See https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template#placement for details."
+  type = object({
+    affinity                = optional(string)
+    availability_zone       = optional(string)
+    group_id                = optional(string)
+    group_name              = optional(string)
+    host_id                 = optional(string)
+    host_resource_group_arn = optional(string)
+    spread_domain           = optional(string)
+    tenancy                 = optional(string)
+    partition_number        = optional(number)
+  })
+  default = null
+}
+
+variable "license_specifications" {
+  description = "Optional EC2 License Manager license configuration ARNs for the runner launch template. Required for macOS dedicated-host runners when the host resource group uses a Mac dedicated host license configuration. See https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_template#license_specification for details."
+  type = list(object({
+    license_configuration_arn = string
+  }))
+  default = []
+}
+
 variable "enable_jit_config" {
-  description = "Overwrite the default behavior for JIT configuration. By default JIT configuration is enabled for ephemeral runners and disabled for non-ephemeral runners. In case of GHES check first if the JIT config API is avaialbe. In case you upgradeing from 3.x to 4.x you can set `enable_jit_config` to `false` to avoid a breaking change when having your own AMI."
+  description = "Overwrite the default behavior for JIT configuration. By default JIT configuration is enabled for ephemeral runners and disabled for non-ephemeral runners. In case of GHES check first if the JIT config API is available. In case you are upgrading from 3.x to 4.x you can set `enable_jit_config` to `false` to avoid a breaking change when having your own AMI."
   type        = bool
   default     = null
 }
@@ -638,7 +760,7 @@ variable "ssm_housekeeper" {
 
   `schedule_expression`: is used to configure the schedule for the lambda.
   `state`: state of the cloudwatch event rule. Valid values are `DISABLED`, `ENABLED`, and `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.
-  `lambda_memory_size`: lambda memery size limit.
+  `lambda_memory_size`: lambda memory size limit.
   `lambda_timeout`: timeout for the lambda in seconds.
   `config`: configuration for the lambda function. Token path will be read by default from the module.
   EOF
@@ -662,18 +784,131 @@ variable "enable_on_demand_failover_for_errors" {
   default     = []
 }
 
-variable "restricted_github" {
-  description = "Flag to allow specific VPC/network in only necessary lambdas that need to reach restricted Github"
+variable "scale_errors" {
+  description = "List of AWS error codes that should trigger retry during scale up. This list replaces the module default scale-up retry errors"
+  type        = list(string)
+  default = [
+    "UnfulfillableCapacity",
+    "MaxSpotInstanceCountExceeded",
+    "TargetCapacityLimitExceededException",
+    "RequestLimitExceeded",
+    "ResourceLimitExceeded",
+    "MaxSpotInstanceCountExceeded",
+    "MaxSpotFleetRequestCountExceeded",
+    "InsufficientInstanceCapacity",
+    "InsufficientCapacityOnHost",
+  ]
+}
+
+variable "lambda_tags" {
+  description = "Map of tags that will be added to all the lambda function resources. Note these are additional tags to the default tags."
+  type        = map(string)
+  default     = {}
+}
+
+variable "metrics" {
+  description = "Configuration for metrics created by the module, by default metrics are disabled to avoid additional costs. When metrics are enable all metrics are created unless explicit configured otherwise."
+  type = object({
+    enable    = optional(bool, false)
+    namespace = optional(string, "GitHub Runners")
+    metric = optional(object({
+      enable_github_app_rate_limit    = optional(bool, true)
+      enable_job_retry                = optional(bool, true)
+      enable_spot_termination_warning = optional(bool, true)
+    }), {})
+  })
+  default = {}
+}
+
+variable "job_retry" {
+  description = <<-EOF
+    Configure job retries. The configuration enables job retries (for ephemeral runners). After creating the instances a message will be published to a job retry queue. The job retry check lambda is checking after a delay if the job is queued. If not the message will be published again on the scale-up (build queue). Using this feature can impact the rate limit of the GitHub app.
+
+    `enable`: Enable or disable the job retry feature.
+    `delay_in_seconds`: The delay in seconds before the job retry check lambda will check the job status.
+    `delay_backoff`: The backoff factor for the delay.
+    `lambda_memory_size`: Memory size limit in MB for the job retry check lambda.
+    'lambda_reserved_concurrent_executions': Amount of reserved concurrent executions for the job retry check lambda function. A value of 0 disables lambda from being triggered and -1 removes any concurrency limitations.
+    `lambda_timeout`: Time out of the job retry check lambda in seconds.
+    `max_attempts`: The maximum number of attempts to retry the job.
+  EOF
+
+  type = object({
+    enable                                = optional(bool, false)
+    delay_in_seconds                      = optional(number, 300)
+    delay_backoff                         = optional(number, 2)
+    lambda_memory_size                    = optional(number, 256)
+    lambda_reserved_concurrent_executions = optional(number, 1)
+
+    lambda_timeout = optional(number, 30)
+
+    max_attempts = optional(number, 1)
+  })
+  default = {}
+
+  validation {
+    condition     = var.job_retry.enable == false || (var.job_retry.enable == true && var.job_retry.delay_in_seconds <= 900)
+    error_message = "The maximum message delay for SWS is 900 seconds."
+  }
+}
+
+variable "user_agent" {
+  description = "User agent used for API calls."
+  type        = string
+  default     = null
+}
+
+variable "lambda_event_source_mapping_batch_size" {
+  description = "Maximum number of records to pass to the lambda function in a single batch for the event source mapping. When not set, the AWS default of 10 events will be used."
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.lambda_event_source_mapping_batch_size >= 1 && var.lambda_event_source_mapping_batch_size <= 1000
+    error_message = "The batch size for the lambda event source mapping must be between 1 and 1000."
+  }
+}
+
+variable "lambda_event_source_mapping_maximum_batching_window_in_seconds" {
+  description = "Maximum amount of time to gather records before invoking the lambda function, in seconds. AWS requires this to be greater than 0 if batch_size is greater than 10. Defaults to 0."
+  type        = number
+  default     = 0
+  validation {
+    condition     = var.lambda_event_source_mapping_maximum_batching_window_in_seconds >= 0 && var.lambda_event_source_mapping_maximum_batching_window_in_seconds <= 300
+    error_message = "Maximum batching window must be between 0 and 300 seconds."
+  }
+}
+
+variable "parameter_store_tags" {
+  description = "Map of tags that will be added to all the SSM Parameter Store parameters created by the Lambda function."
+  type        = map(string)
+  default     = {}
+}
+
+variable "use_dedicated_host" {
+  description = "Experimental! Can be removed / changed without trigger a major release. Whether to use EC2 dedicated hosts for the runners. Needed for macos runners Note that using dedicated hosts can increase cost significantly."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "http_proxy" {
-  type    = string
-  default = "http://lhcproxy2.eu.options-it.com:3128"
+  description = "HTTP proxy URL for scale-up and scale-down Lambda functions. Configure the EC2 runner proxy through userdata_pre_install. Embedded credentials are not allowed."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.http_proxy == null ? true : can(regex("^https?://[^/@[:space:]]+(:[0-9]+)?/?$", var.http_proxy))
+    error_message = "http_proxy must be an HTTP(S) proxy URL without embedded credentials."
+  }
 }
 
 variable "no_proxy" {
-  type    = string
-  default = "10.*,10.0.0.0/8,10.100.0.1,10.233.*.*,127.0.0.*,127.0.0.1,169.254.169.254,172.16.*.*,172.16.0.0/12,172.17.*.*,172.29.*.*,172.30.*.*,192.168.*,192.168.0.0/16,artifactory.systematica.com,eks.amazonaws.com,.eu-west-1.eks.amazonaws.com,internal-k8s-stciio-1d6402e146-1525655380.eu-west-1.elb.amazonaws.com,kubernetes,kubernetes.default,kubernetes.default.svc,localhost,*.local.systematica.com,.local.systematica.com,*.options-it.com,.options-it.com,options-it.com,.privatelink.snowflakecomputing.com,privatelink.snowflakecomputing.com,s3.eu-west-1.vpce.amazonaws.com,si-aws.com,*.systematica.com,.systematica.com,systematica.com,*.si-cloud.io,.si-cloud.io,si-cloud.io"
+  description = "Comma-separated list of hosts and domains excluded by the scale-up and scale-down Lambda proxy configuration."
+  type        = string
+  default     = null
+}
+
+variable "restricted_github" {
+  description = "When true, the SSM housekeeper Lambda skips VPC placement."
+  type        = bool
+  default     = true
 }

@@ -1,0 +1,17 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        actions/*: hash-pin
+  unpinned-images:
+    ignore:
+      # ignore, since CI is checking latest
+      - terraform.yml:22
+      - terraform.yml:96
+      - terraform.yml:161
+  dangerous-triggers:
+    ignore:
+      - semantic-check.yml:2
+  concurrency-limits:
+    ignore:
+      - release.yml

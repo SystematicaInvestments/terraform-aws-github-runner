@@ -23,16 +23,16 @@ resource "aws_lambda_function" "ssm_housekeeper" {
   handler           = "index.ssmHousekeeper"
   runtime           = var.lambda_runtime
   timeout           = local.ssm_housekeeper.lambda_timeout
-  tags              = local.tags
+  tags              = merge(local.tags, var.lambda_tags)
   memory_size       = local.ssm_housekeeper.lambda_memory_size
   architectures     = [var.lambda_architecture]
 
   environment {
     variables = {
       ENVIRONMENT                              = var.prefix
-      LOG_LEVEL                                = var.log_level
+      LOG_LEVEL                                = upper(var.log_level)
       SSM_CLEANUP_CONFIG                       = jsonencode(local.ssm_housekeeper.config)
-      POWERTOOLS_SERVICE_NAME                  = "ssm-housekeeper"
+      POWERTOOLS_SERVICE_NAME                  = "${var.prefix}-ssm-housekeeper"
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
       POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error
@@ -40,7 +40,7 @@ resource "aws_lambda_function" "ssm_housekeeper" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github == false) ? [true] : []
+    for_each = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
@@ -59,6 +59,7 @@ resource "aws_cloudwatch_log_group" "ssm_housekeeper" {
   name              = "/aws/lambda/${aws_lambda_function.ssm_housekeeper.function_name}"
   retention_in_days = var.logging_retention_in_days
   kms_key_id        = var.logging_kms_key_id
+  log_group_class   = var.log_class
   tags              = var.tags
 }
 
@@ -83,7 +84,7 @@ resource "aws_lambda_permission" "ssm_housekeeper" {
 }
 
 resource "aws_iam_role" "ssm_housekeeper" {
-  name                 = "${var.prefix}-ssm-hk-lambda"
+  name                 = "${substr("${var.prefix}-ssm-hk-lambda", 0, 54)}-${substr(md5("${var.prefix}-ssm-hk-lambda"), 0, 8)}"
   description          = "Lambda role for SSM Housekeeper (${var.prefix})"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
@@ -92,7 +93,7 @@ resource "aws_iam_role" "ssm_housekeeper" {
 }
 
 resource "aws_iam_role_policy" "ssm_housekeeper" {
-  name = "lambda-ssm"
+  name = "ssm-policy"
   role = aws_iam_role.ssm_housekeeper.name
   policy = templatefile("${path.module}/policies/lambda-ssm-housekeeper.json", {
     ssm_token_path = "arn:${var.aws_partition}:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.token_path}"
@@ -100,7 +101,7 @@ resource "aws_iam_role_policy" "ssm_housekeeper" {
 }
 
 resource "aws_iam_role_policy" "ssm_housekeeper_logging" {
-  name = "lambda-logging"
+  name = "logging-policy"
   role = aws_iam_role.ssm_housekeeper.name
   policy = templatefile("${path.module}/policies/lambda-cloudwatch.json", {
     log_group_arn = aws_cloudwatch_log_group.ssm_housekeeper.arn
@@ -108,13 +109,14 @@ resource "aws_iam_role_policy" "ssm_housekeeper_logging" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_housekeeper_vpc_execution_role" {
-  count      = length(var.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? 1 : 0
   role       = aws_iam_role.ssm_housekeeper.name
   policy_arn = "arn:${var.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_iam_role_policy" "ssm_housekeeper_xray" {
   count  = var.tracing_config.mode != null ? 1 : 0
+  name   = "xray-policy"
   policy = data.aws_iam_policy_document.lambda_xray[0].json
   role   = aws_iam_role.ssm_housekeeper.name
 }

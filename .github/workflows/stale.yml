@@ -3,14 +3,27 @@ on:
   schedule:
     - cron: "30 1 * * *"
   workflow_dispatch:
-permissions:
-  issues: write
-  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
 jobs:
   stale:
+    name: Mark stale issues and PRs
+    if: github.repository_owner == 'github-aws-runners'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write # for actions/stale to close stale issues
+      pull-requests: write # for actions/stale to close stale PRs
     steps:
-      - uses: actions/stale@28ca1036281a5e5922ead5184a1bbf96e5fc984e # ratchet:actions/stale@v7
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10.4.0
         with:
           stale-issue-message: >
             This issue has been automatically marked as stale because it has not had activity in the last 30 days. It will be closed if no further activity occurs.  Thank you for your contributions.

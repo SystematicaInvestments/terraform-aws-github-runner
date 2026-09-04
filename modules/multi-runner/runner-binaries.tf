@@ -18,12 +18,15 @@ module "runner_binaries" {
   lambda_zip                       = var.runner_binaries_syncer_lambda_zip
   lambda_memory_size               = var.runner_binaries_syncer_memory_size
   lambda_timeout                   = var.runner_binaries_syncer_lambda_timeout
+  lambda_tags                      = var.lambda_tags
   tracing_config                   = var.tracing_config
   logging_retention_in_days        = var.logging_retention_in_days
   logging_kms_key_id               = var.logging_kms_key_id
+  log_class                        = var.log_class
   state_event_rule_binaries_syncer = var.state_event_rule_binaries_syncer
 
   server_side_encryption_configuration = var.runner_binaries_s3_sse_configuration
+  s3_tags                              = var.runner_binaries_s3_tags
   s3_versioning                        = var.runner_binaries_s3_versioning
 
   role_path                 = var.role_path
@@ -36,6 +39,8 @@ module "runner_binaries" {
   aws_partition             = var.aws_partition
 
   lambda_principals = var.lambda_principals
+
+  restricted_github = var.restricted_github
 }
 locals {
   runner_binaries_by_os_and_arch_map = {

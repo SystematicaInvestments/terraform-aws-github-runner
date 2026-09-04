@@ -20,25 +20,39 @@ locals {
   default_ami = {
     "windows" = { name = ["Windows_Server-2022-English-Full-ECS_Optimized-*"] }
     "linux"   = var.runner_architecture == "arm64" ? { name = ["al2023-ami-2023.*-kernel-6.*-arm64"] } : { name = ["al2023-ami-2023.*-kernel-6.*-x86_64"] }
+    "osx"     = var.runner_architecture == "arm64" ? { name = ["amzn-ec2-macos-15.*-arm64"] } : { name = ["amzn-ec2-macos-15.*"] }
   }
 
   default_userdata_template = {
     "windows" = "${path.module}/templates/user-data.ps1"
     "linux"   = "${path.module}/templates/user-data.sh"
+    "osx"     = "${path.module}/templates/user-data-osx.sh"
   }
 
   userdata_install_runner = {
     "windows" = "${path.module}/templates/install-runner.ps1"
     "linux"   = "${path.module}/templates/install-runner.sh"
+    "osx"     = "${path.module}/templates/install-runner-osx.sh"
   }
 
   userdata_start_runner = {
     "windows" = "${path.module}/templates/start-runner.ps1"
     "linux"   = "${path.module}/templates/start-runner.sh"
+    "osx"     = "${path.module}/templates/start-runner-osx.sh"
   }
 
-  ami_kms_key_arn = var.ami_kms_key_arn != null ? var.ami_kms_key_arn : ""
-  ami_filter      = merge(local.default_ami[var.runner_os], var.ami_filter)
+  # Handle AMI configuration
+  ami_config = var.ami != null ? var.ami : {
+    filter               = local.default_ami[var.runner_os]
+    owners               = ["amazon"]
+    id_ssm_parameter_arn = null
+    kms_key_arn          = null
+  }
+  ami_kms_key_arn           = local.ami_config.kms_key_arn != null ? local.ami_config.kms_key_arn : ""
+  ami_filter                = merge(local.default_ami[var.runner_os], local.ami_config.filter)
+  ami_id_ssm_module_managed = local.ami_config.id_ssm_parameter_arn == null
+  # Extract parameter name from ARN (format: arn:aws:ssm:region:account:parameter/path/to/param)
+  ami_id_ssm_parameter_name = local.ami_id_ssm_module_managed ? null : try(regex("parameter(/.+)$", local.ami_config.id_ssm_parameter_arn)[0], null)
 
   enable_job_queued_check = var.enable_job_queued_check == null ? !var.enable_ephemeral_runners : var.enable_job_queued_check
 
@@ -54,7 +68,9 @@ locals {
       S3_LOCATION_RUNNER_DISTRIBUTION = local.s3_location_runner_distribution
       RUNNER_ARCHITECTURE             = var.runner_architecture
     })
-    post_install = var.userdata_post_install
+    post_install       = var.userdata_post_install
+    hook_job_started   = var.runner_hook_job_started
+    hook_job_completed = var.runner_hook_job_completed
     start_runner = templatefile(local.userdata_start_runner[var.runner_os], {
       metadata_tags = var.metadata_options != null ? var.metadata_options.instance_metadata_tags : "enabled"
     })
@@ -66,6 +82,13 @@ locals {
     enable_cloudwatch_agent         = var.enable_cloudwatch_agent
     ssm_key_cloudwatch_agent_config = var.enable_cloudwatch_agent ? aws_ssm_parameter.cloudwatch_agent_config_runner[0].name : ""
   }) : var.userdata_content) : ""
+
+  encoded_user_data = (
+    var.runner_os == "linux" ? base64gzip(local.user_data) :
+    var.runner_os == "windows" ? base64encode(local.user_data) :
+    var.runner_os == "osx" ? base64encode(local.user_data) :
+    null
+  )
 }
 
 data "aws_ami" "runner" {
@@ -79,7 +102,29 @@ data "aws_ami" "runner" {
     }
   }
 
-  owners = var.ami_owners
+  owners = local.ami_config.owners
+}
+
+resource "aws_ssm_parameter" "runner_ami_id" {
+  count     = local.ami_id_ssm_module_managed ? 1 : 0
+  name      = "${var.ssm_paths.root}/${var.ssm_paths.config}/ami_id"
+  type      = "String"
+  data_type = "aws:ec2:image"
+  value     = data.aws_ami.runner.id
+
+  tags = merge(
+    local.tags,
+    {
+      # Remove parentheses from AMI name to comply with AWS tag constraints
+      "ghr:ami_name" = replace(data.aws_ami.runner.name, "/[()]/", "")
+    },
+    {
+      "ghr:ami_creation_date" = data.aws_ami.runner.creation_date
+    },
+    {
+      "ghr:ami_deprecation_time" = data.aws_ami.runner.deprecation_time
+    }
+  )
 }
 
 resource "aws_launch_template" "runner" {
@@ -91,14 +136,15 @@ resource "aws_launch_template" "runner" {
       device_name = block_device_mappings.value.device_name
 
       ebs {
-        delete_on_termination = block_device_mappings.value.delete_on_termination
-        encrypted             = block_device_mappings.value.encrypted
-        iops                  = block_device_mappings.value.iops
-        kms_key_id            = block_device_mappings.value.kms_key_id
-        snapshot_id           = block_device_mappings.value.snapshot_id
-        throughput            = block_device_mappings.value.throughput
-        volume_size           = block_device_mappings.value.volume_size
-        volume_type           = block_device_mappings.value.volume_type
+        delete_on_termination      = block_device_mappings.value.delete_on_termination
+        encrypted                  = block_device_mappings.value.encrypted
+        iops                       = block_device_mappings.value.iops
+        kms_key_id                 = block_device_mappings.value.kms_key_id
+        snapshot_id                = block_device_mappings.value.snapshot_id
+        throughput                 = block_device_mappings.value.throughput
+        volume_initialization_rate = block_device_mappings.value.volume_initialization_rate
+        volume_size                = block_device_mappings.value.volume_size
+        volume_type                = block_device_mappings.value.volume_type
       }
     }
   }
@@ -129,16 +175,48 @@ resource "aws_launch_template" "runner" {
     }
   }
 
+  dynamic "cpu_options" {
+    for_each = var.cpu_options != null ? [var.cpu_options] : []
+    content {
+      core_count            = try(cpu_options.value.core_count, null)
+      threads_per_core      = try(cpu_options.value.threads_per_core, null)
+      amd_sev_snp           = try(cpu_options.value.amd_sev_snp, null)
+      nested_virtualization = try(cpu_options.value.nested_virtualization, null)
+    }
+  }
+
+  dynamic "placement" {
+    for_each = var.placement != null ? [var.placement] : []
+    content {
+      affinity                = try(placement.value.affinity, null)
+      availability_zone       = try(placement.value.availability_zone, null)
+      group_id                = try(placement.value.group_id, null)
+      group_name              = try(placement.value.group_name, null)
+      host_id                 = try(placement.value.host_id, null)
+      host_resource_group_arn = try(placement.value.host_resource_group_arn, null)
+      spread_domain           = try(placement.value.spread_domain, null)
+      tenancy                 = try(placement.value.tenancy, null)
+      partition_number        = try(placement.value.partition_number, null)
+    }
+  }
+
+  dynamic "license_specification" {
+    for_each = var.license_specifications
+    content {
+      license_configuration_arn = license_specification.value.license_configuration_arn
+    }
+  }
+
   monitoring {
     enabled = var.enable_runner_detailed_monitoring
   }
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.runner.name
+    name = var.iam_overrides["override_instance_profile"] ? var.iam_overrides["instance_profile_name"] : aws_iam_instance_profile.runner[0].name
   }
 
   instance_initiated_shutdown_behavior = "terminate"
-  image_id                             = data.aws_ami.runner.id
+  image_id                             = "resolve:ssm:${local.ami_id_ssm_module_managed ? aws_ssm_parameter.runner_ami_id[0].arn : var.ami.id_ssm_parameter_arn}"
   key_name                             = var.key_name
   ebs_optimized                        = var.ebs_optimized
 
@@ -175,7 +253,42 @@ resource "aws_launch_template" "runner" {
     )
   }
 
-  user_data = var.runner_os == "windows" ? base64encode(local.user_data) : base64gzip(local.user_data)
+  # We avoid including the "spot-instances-request" tag_specifications block when on_demand_failover_for_errors is defined,
+  # because when using on-demand fallback, the spot instance request resource is not created and thus the tags would not apply.
+  # Additionally, tagging spot requests via the CreateFleetCommand in the Lambda function does not work as expected,
+  # so we rely on Terraform to manage these tags only when spot is exclusively used without on-demand failover.
+  dynamic "tag_specifications" {
+    for_each = var.instance_target_capacity_type == "spot" && length(var.enable_on_demand_failover_for_errors) == 0 ? [1] : [] # Include the block only if the value is "spot" and on_demand_failover_for_errors is not enabled
+    content {
+      resource_type = "spot-instances-request"
+      tags = merge(
+        local.tags,
+        {
+          "Name" = format("%s", local.name_runner)
+        },
+        {
+          "ghr:runner_name_prefix" = var.runner_name_prefix
+        },
+        var.runner_ec2_tags
+      )
+    }
+  }
+
+  tag_specifications {
+    resource_type = "network-interface"
+    tags = merge(
+      local.tags,
+      {
+        "Name" = format("%s", local.name_runner)
+      },
+      {
+        "ghr:runner_name_prefix" = var.runner_name_prefix
+      },
+      var.runner_ec2_tags
+    )
+  }
+
+  user_data = local.encoded_user_data
 
   tags = local.tags
 

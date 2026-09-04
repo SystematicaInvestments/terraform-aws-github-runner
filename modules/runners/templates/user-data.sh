@@ -1,19 +1,18 @@
-#!/bin/bash
+#!/bin/bash -e
 
 install_with_retry() {
-  max_attempts=5
-  attempt_count=0
-  success=false
-  while [ $success = false ] && [ $attempt_count -le $max_attempts ]; do
-    echo "Attempting $attempt_count/$max_attempts: Installing $*"
-    dnf install -y $*
-  if [ $? -eq 0 ]; then
-      success=true
-    else
-      echo "Failed to install $1 - retrying"
-      attempt_count=$(( attempt_count + 1 ))
-      sleep 5
+  local max_attempts=5
+  local attempt_count=1
+
+  while ! dnf install -y "$@"; do
+    if [ "$attempt_count" -ge "$max_attempts" ]; then
+      echo "Failed to install $* after $max_attempts attempts" >&2
+      return 1
     fi
+
+    attempt_count=$((attempt_count + 1))
+    echo "Failed to install $*; retrying $attempt_count/$max_attempts" >&2
+    sleep 5
   done
 }
 
@@ -33,18 +32,16 @@ set -x
 ${pre_install}
 
 max_attempts=5
-attempt_count=0
-success=false
-while [ $success = false ] && [ $attempt_count -le $max_attempts ]; do
-  echo "Attempting $attempt_count/$max_attempts: upgrade-minimal"
-  dnf upgrade-minimal -y
-if [ $? -eq 0 ]; then
-    success=true
-  else
-    echo "Failed to run `dnf upgrad-minimal -y` - retrying"
-    attempt_count=$(( attempt_count + 1 ))
-    sleep 5
+attempt_count=1
+while ! dnf upgrade-minimal -y; do
+  if [ "$attempt_count" -ge "$max_attempts" ]; then
+    echo "Failed to run dnf upgrade-minimal -y after $max_attempts attempts" >&2
+    exit 1
   fi
+
+  attempt_count=$((attempt_count + 1))
+  echo "Failed to run dnf upgrade-minimal -y; retrying $attempt_count/$max_attempts" >&2
+  sleep 5
 done
 
 # Install docker
@@ -61,5 +58,21 @@ user_name=ec2-user
 ${install_runner}
 
 ${post_install}
+
+# Register runner job hooks
+# Ref: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/running-scripts-before-or-after-a-job
+%{ if hook_job_started != "" }
+cat > /opt/actions-runner/hook_job_started.sh <<'EOF'
+${hook_job_started}
+EOF
+echo ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/actions-runner/hook_job_started.sh | tee -a /opt/actions-runner/.env
+%{ endif }
+
+%{ if hook_job_completed != "" }
+cat > /opt/actions-runner/hook_job_completed.sh <<'EOF'
+${hook_job_completed}
+EOF
+echo ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/actions-runner/hook_job_completed.sh | tee -a /opt/actions-runner/.env
+%{ endif }
 
 ${start_runner}

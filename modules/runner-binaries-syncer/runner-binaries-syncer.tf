@@ -4,6 +4,7 @@ locals {
   gh_binary_os_label = {
     windows = "win",
     linux   = "linux"
+    osx     = "osx"
   }
 }
 
@@ -26,7 +27,7 @@ resource "aws_lambda_function" "syncer" {
       ENVIRONMENT                              = var.prefix
       GITHUB_RUNNER_ARCHITECTURE               = var.runner_architecture
       GITHUB_RUNNER_OS                         = local.gh_binary_os_label[var.runner_os]
-      LOG_LEVEL                                = var.log_level
+      LOG_LEVEL                                = upper(var.log_level)
       POWERTOOLS_LOGGER_LOG_EVENT              = var.log_level == "debug" ? "true" : "false"
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
@@ -39,14 +40,14 @@ resource "aws_lambda_function" "syncer" {
   }
 
   dynamic "vpc_config" {
-    for_each = var.lambda_subnet_ids != null && (var.lambda_security_group_ids != null && var.restricted_github == false) ? [true] : []
+    for_each = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? [true] : []
     content {
       security_group_ids = var.lambda_security_group_ids
       subnet_ids         = var.lambda_subnet_ids
     }
   }
 
-  tags = var.tags
+  tags = merge(var.tags, var.lambda_tags)
 
   dynamic "tracing_config" {
     for_each = var.tracing_config.mode != null ? [true] : []
@@ -70,11 +71,12 @@ resource "aws_cloudwatch_log_group" "syncer" {
   name              = "/aws/lambda/${aws_lambda_function.syncer.function_name}"
   retention_in_days = var.logging_retention_in_days
   kms_key_id        = var.logging_kms_key_id
+  log_group_class   = var.log_class
   tags              = var.tags
 }
 
 resource "aws_iam_role" "syncer_lambda" {
-  name                 = "${var.prefix}-action-syncer-lambda-role"
+  name                 = "${substr("${var.prefix}-syncer-lambda", 0, 54)}-${substr(md5("${var.prefix}-syncer-lambda"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
   permissions_boundary = var.role_permissions_boundary
@@ -103,7 +105,7 @@ data "aws_iam_policy_document" "lambda_assume_role_policy" {
 }
 
 resource "aws_iam_role_policy" "lambda_logging" {
-  name = "${var.prefix}-lambda-logging-policy-syncer"
+  name = "logging-policys"
   role = aws_iam_role.syncer_lambda.id
 
   policy = templatefile("${path.module}/policies/lambda-cloudwatch.json", {
@@ -112,7 +114,7 @@ resource "aws_iam_role_policy" "lambda_logging" {
 }
 
 resource "aws_iam_role_policy" "syncer" {
-  name = "${var.prefix}-lambda-syncer-s3-policy"
+  name = "s3-policy"
   role = aws_iam_role.syncer_lambda.id
 
   policy = templatefile("${path.module}/policies/lambda-syncer.json", {
@@ -133,7 +135,7 @@ resource "aws_cloudwatch_event_target" "syncer" {
 }
 
 resource "aws_iam_role_policy_attachment" "syncer_vpc_execution_role" {
-  count      = length(var.lambda_subnet_ids) > 0 ? 1 : 0
+  count      = length(var.lambda_subnet_ids) > 0 && length(var.lambda_security_group_ids) > 0 && !var.restricted_github ? 1 : 0
   role       = aws_iam_role.syncer_lambda.name
   policy_arn = "arn:${var.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
@@ -186,6 +188,7 @@ resource "aws_lambda_permission" "on_deploy" {
 
 resource "aws_iam_role_policy" "syncer_lambda_xray" {
   count  = var.tracing_config.mode != null ? 1 : 0
+  name   = "xray-policy"
   policy = data.aws_iam_policy_document.lambda_xray[0].json
   role   = aws_iam_role.syncer_lambda.name
 }

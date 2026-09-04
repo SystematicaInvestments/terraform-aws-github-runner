@@ -1,11 +1,17 @@
 locals {
-  action_runner_distribution_object_key = "actions-runner-${var.runner_os}.${var.runner_os == "linux" ? "tar.gz" : "zip"}"
+  action_runner_distribution_extensions = {
+    linux   = "tar.gz"
+    osx     = "tar.gz"
+    windows = "zip"
+  }
+
+  action_runner_distribution_object_key = "actions-runner-${var.runner_os}.${local.action_runner_distribution_extensions[var.runner_os]}"
 }
 
 resource "aws_s3_bucket" "action_dist" {
   bucket        = var.distribution_bucket_name
   force_destroy = true
-  tags          = var.tags
+  tags          = merge(var.tags, var.s3_tags)
 }
 
 resource "aws_s3_bucket_ownership_controls" "this" {
@@ -21,6 +27,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "bucket_config" {
   rule {
     id     = "lifecycle_config"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 7

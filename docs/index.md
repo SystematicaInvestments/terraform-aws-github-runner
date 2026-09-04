@@ -1,13 +1,13 @@
 # GitHub Self-Hosted on AWS on Spot Instances
 
-This [Terraform](https://www.terraform.io/) module creates the required infrastructure needed to host [GitHub Actions](https://github.com/features/actions) self-hosted, auto-scaling runners on [AWS spot instances](https://aws.amazon.com/ec2/spot/). It provides the required logic to handle the life cycle for scaling up and down using a set of AWS Lambda functions. Runners are scaled down to zero to avoid costs when no workflows are active.
+This [Terraform](https://www.terraform.io/) module creates the required infrastructure needed to host [GitHub Actions](https://github.com/features/actions) self-hosted, auto-scaling runners on [AWS spot instances](https://aws.amazon.com/ec2/spot/). It provides the required logic to handle the lifecycle for scaling up and down using a set of AWS Lambda functions. Runners are scaled down to zero to avoid costs when no workflows are active.
 
 ![Architecture](assets/runners.light.png#only-light)
 ![Architecture](assets/runners.dark.png#only-dark)
 
 ## Motivation
 
-GitHub Actions `self-hosted` runners provide a flexible option to run CI workloads on the infrastructure of your choice. However, currently GitHub does not provide tooling to automate the creation and scaling of action runners. This module creates the AWS infrastructure to host action runners on spot instances. It also provides lambda modules to orchestrate the life cycle of the action runners.
+GitHub Actions `self-hosted` runners provide a flexible option to run CI workloads on the infrastructure of your choice. However, currently GitHub does not provide tooling to automate the creation and scaling of action runners. This module creates the AWS infrastructure to host action runners on spot instances. It also provides lambda modules to orchestrate the lifecycle of the action runners.
 
 Lambda was selected as the preferred runtime for two primary reasons. Firstly, it enables the development of compact components with limited access to AWS and GitHub. Secondly, it offers a scalable configuration with minimal expenses, applicable at both the repository and organizational levels. The Lambda functions will be responsible for provisioning Linux-based EC2 instances equipped with Docker to handle CI workloads compatible with Linux and/or Docker. The primary objective is to facilitate Docker-based workloads.
 
@@ -15,23 +15,23 @@ A pertinent question may arise: why not opt for Kubernetes? The current strategy
 
 ## Overview
 
-The module is designed to be used in a GitHub organization. It can also be used in a GitHub repository, but this not supports all features. The module is receiving GitHub webhook events for the `workflow_job` event. The module will create a new runner if the event is for a workflow that requires a runner, and no runner is available. Alteratively the module can be configured as ephemeral runners. In this case the module will create a new runner for each workflow job event.
+The module is designed to be used in a GitHub organization. It can also be used in a GitHub repository, but this does not support all features. The module is receiving GitHub webhook events for the `workflow_job` event. The module will create a new runner if the event is for a workflow that requires a runner, and no runner is available. Alternatively the module can be configured as ephemeral runners. In this case the module will create a new runner for each workflow job event.
 
-For ephemeral runners a pool is can be configured. The pool maintains a minimum number of runners based on a schedule. The pool works only for org level runners.
+For ephemeral runners a pool can be configured. The pool maintains a minimum number of runners based on a schedule. The pool works only for org level runners.
 
 For non ephemeral runners with the idle config the module will avoid scaling down back to zero. Instead it will maintain a minimum number of runners based on a schedule. This avoids the need to scale up when a new workflow is triggered.
 
 
 ## Detailed design
 
-The diagram below shows the architecture of the module, groups are indicating the different components. Ww will go through the components in the following sections.
+The diagram below shows the architecture of the module, groups are indicating the different components. We will go through the components in the following sections.
 
 ![Architecture](assets/aws-architecture.light.png#only-light)
 ![Architecture](assets/aws-architecture.dark.png#only-dark)
 
 ### Webhook
 
-The moment a GitHub action workflow requiring a `self-hosted` runner is triggered, GitHub will try to find a runner which can execute the workload. See [additional notes](additional_notes.md) for how the selection is made. This module reacts to GitHub's [`workflow_job` event](https://docs.github.com/en/free-pro-team@latest/developers/webhooks-and-events/webhook-events-and-payloads#workflow_job) for the triggered workflow and creates a new runner if necessary.
+The moment a GitHub action workflow requiring a `self-hosted` runner is triggered, GitHub will try to find a runner which can execute the workload. See [additional notes](additional_notes.md) for how the selection is made. The module can be deployed in two modes. One mode called `direct`, after accepting the [`workflow_job` event](https://docs.github.com/en/free-pro-team@latest/developers/webhooks-and-events/webhook-events-and-payloads#workflow_job) event the module will dispatch the event to a SQS queue on which the scale-up function will act. The second mode, `eventbridge` will funnel events via the AWS EventBridge. the EventBridge enables act on other events then only the `workflow_job` event with status `queued`. besides that the EventBridge supports replay functionality. For future extensions to act on events or create a data lake we will relay on the EventBridge.
 
 For receiving the `workflow_job` event by the webhook (lambda), a webhook needs to be created in GitHub. The same app as for API calls can be used to create the webhook. Or a dedicated webhook can be defined.
 
@@ -46,7 +46,7 @@ The "Scale Up Runner" Lambda actively monitors the SQS queue, processing incomin
 
 The Lambda first requests a JIT configuration or registration token from GitHub, which is needed later by the runner to register itself. This avoids the case that the EC2 instance, which later in the process will install the agent, needs administration permissions to register the runner. Next, the EC2 spot instance is created via the launch template. The launch template defines the specifications of the required instance and contains a [`user_data`](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html) script. This script will install the required software and configure it. The configuration for the runner is shared via EC2 tags and the parameter store (SSM), from which the user data script will fetch it and delete it once it has been retrieved. Once the user data script is finished, the action runner should be online, and the workflow will start in seconds.
 
-The current method for scaling down runners employs a straightforward approach: at predefined intervals, the Lambda conducts a thorough examination of each runner (instance) to assess its activity. If a runner is found to be idle, it is deregistered from GitHub, and the associated AWS instance is terminated. For ephemeral runners the the instance is terminated immediately after the workflow is finished. To avoid orphaned runners the scale down lambda is active in this cae as well.
+The current method for scaling down runners employs a straightforward approach: at predefined intervals, the Lambda conducts a thorough examination of each runner (instance) to assess its activity. If a runner is found to be idle, it is deregistered from GitHub, and the associated AWS instance is terminated. For ephemeral runners the instance is terminated immediately after the workflow is finished. Instances not registered in GitHub as a runner after a minimal boot time will be marked orphan and removed in a next cycle. To avoid orphaned runners the scale down lambda is active in this case as well.
 
 ### Pool
 
@@ -66,15 +66,32 @@ The AMI cleaner is a lambda that will clean up AMIs that are older than a config
 
 ### Instance Termination Watcher
 
-> This feature is Beta, changes will not trigger a major release as long in beta.
+!!! Warning
 
-The Instance Termination Watcher is creating log and optional metrics for termination of instances. Currently only spot termination warnings are watched. See [configuration](configuration/) for more details. 
+    This feature is Beta, changes will not trigger a major release as long in beta.
+
+The Instance Termination Watcher is creating log and optional metrics for termination of instances. Currently only spot termination warnings are watched. See [configuration](configuration/) for more details.
+
+
+### Job Retry
+
+!!! Warning
+
+    This feature is Beta, changes will not trigger a major release as long in beta.
+
+The Job Retry will allow you to retry scaling when a job is not started. When enabled the scale up lambda will send a retry message to the SQS queue. The Job Retry lambda will check after a delay if the job is still queued, and if so, it will send a retry command to the scale up lambda via SQS. The feature is designed to be used with ephemeral runners. The feature is opt in, it will not be created by default.
+
+Consequences of enabling the feature are:
+
+- Increase of calls to the GitHub API, could cause reaching the rate limit.
+- Could create new instance when jobs are not started caused by other failures, resulting in more costs and useless instance creation.
+
 
 ### Security
 
-Sensitive information such as secrets and private keys is stored securely in the SSM Parameter Store. These values undergo encryption using either the default KMS key for SSM or a custom KMS key, depending on the specified configuration.
+Sensitive information such as secrets and private keys are stored securely in the SSM Parameter Store. These values undergo encryption using either the default KMS key for SSM or a custom KMS key, depending on the specified configuration.
 
-Permission are managed in several places. Below are the most important ones. For details check the Terraform sources.
+Permissions are managed in several places. Below are the most important ones. For details check the Terraform sources.
 
 - The GitHub App requires access to actions and to publish `workflow_job` events to the AWS webhook (API gateway).
 - The scale up lambda should have access to EC2 for creating and tagging instances.
@@ -96,5 +113,5 @@ Both modules are built on top of the same base modules. When using the multi-run
 The module contains a lot of configuration options. The default values are a good starting point. But you may want to tweak some of the values. Below are some recommendations. We suggest the following configuration for the runners:
 
 - Use the multi-runner module to create multiple runners in one go.
-- Use the ephemeral runners for org level runners. To improve the security of your runners.
+- Use the ephemeral runners for org level runners to improve the security of your runners.
 - Use pre-built AMIs to speed up the startup of your runners.

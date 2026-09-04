@@ -1,18 +1,19 @@
 module "webhook" {
-  source      = "../webhook"
-  prefix      = var.prefix
-  tags        = local.tags
-  kms_key_arn = var.kms_key_arn
+  source                              = "../webhook"
+  prefix                              = var.prefix
+  tags                                = local.tags
+  kms_key_arn                         = var.kms_key_arn
+  eventbridge                         = var.eventbridge
+  runner_matcher_config               = local.runner_config
+  matcher_config_parameter_store_tier = var.matcher_config_parameter_store_tier
 
-  runner_matcher_config = local.runner_config
   ssm_paths = {
     root    = local.ssm_root_path
     webhook = var.ssm_paths.webhook
   }
-  sqs_workflow_job_queue = length(aws_sqs_queue.webhook_events_workflow_job_queue) > 0 ? aws_sqs_queue.webhook_events_workflow_job_queue[0] : null
 
   github_app_parameters = {
-    webhook_secret = module.ssm.parameters.github_app_webhook_secret
+    webhook_secret = local.github_app_parameters.webhook_secret
   }
 
   lambda_s3_bucket                              = var.lambda_s3_bucket
@@ -24,17 +25,23 @@ module "webhook" {
   lambda_zip                                    = var.webhook_lambda_zip
   lambda_timeout                                = var.webhook_lambda_timeout
   lambda_memory_size                            = var.webhook_lambda_memory_size
+  lambda_tags                                   = var.lambda_tags
   tracing_config                                = var.tracing_config
   logging_retention_in_days                     = var.logging_retention_in_days
   logging_kms_key_id                            = var.logging_kms_key_id
+  log_class                                     = var.log_class
 
-  role_path                 = var.role_path
-  role_permissions_boundary = var.role_permissions_boundary
-  repository_white_list     = var.repository_white_list
+  role_path                    = var.role_path
+  role_permissions_boundary    = var.role_permissions_boundary
+  repository_white_list        = var.repository_white_list
+  webhook_allowed_source_cidrs = var.webhook_allowed_source_cidrs
+  queue_selection_strategy     = var.queue_selection_strategy
 
   lambda_subnet_ids         = var.lambda_subnet_ids
   lambda_security_group_ids = var.lambda_security_group_ids
   aws_partition             = var.aws_partition
 
   log_level = var.log_level
+
+  restricted_github = var.restricted_github
 }

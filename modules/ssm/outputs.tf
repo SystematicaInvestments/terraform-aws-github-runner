@@ -1,16 +1,35 @@
 output "parameters" {
   value = {
     github_app_id = {
-      name = aws_ssm_parameter.github_app_id.name
-      arn  = aws_ssm_parameter.github_app_id.arn
+      name = var.github_app.id_ssm != null ? var.github_app.id_ssm.name : aws_ssm_parameter.github_app_id[0].name
+      arn  = var.github_app.id_ssm != null ? var.github_app.id_ssm.arn : aws_ssm_parameter.github_app_id[0].arn
     }
     github_app_key_base64 = {
-      name = aws_ssm_parameter.github_app_key_base64.name
-      arn  = aws_ssm_parameter.github_app_key_base64.arn
+      name = var.github_app.key_base64_ssm != null ? var.github_app.key_base64_ssm.name : aws_ssm_parameter.github_app_key_base64[0].name
+      arn  = var.github_app.key_base64_ssm != null ? var.github_app.key_base64_ssm.arn : aws_ssm_parameter.github_app_key_base64[0].arn
     }
     github_app_webhook_secret = {
-      name = aws_ssm_parameter.github_app_webhook_secret.name
-      arn  = aws_ssm_parameter.github_app_webhook_secret.arn
+      name = var.github_app.webhook_secret_ssm != null ? var.github_app.webhook_secret_ssm.name : aws_ssm_parameter.github_app_webhook_secret[0].name
+      arn  = var.github_app.webhook_secret_ssm != null ? var.github_app.webhook_secret_ssm.arn : aws_ssm_parameter.github_app_webhook_secret[0].arn
     }
   }
+}
+
+output "additional_app_parameters" {
+  value = [
+    for idx, app in var.additional_github_apps : {
+      id = {
+        name = app.id_ssm != null ? app.id_ssm.name : aws_ssm_parameter.additional_github_app_id[tostring(idx)].name
+        arn  = app.id_ssm != null ? app.id_ssm.arn : aws_ssm_parameter.additional_github_app_id[tostring(idx)].arn
+      }
+      key_base64 = {
+        name = app.key_base64_ssm != null ? app.key_base64_ssm.name : aws_ssm_parameter.additional_github_app_key_base64[tostring(idx)].name
+        arn  = app.key_base64_ssm != null ? app.key_base64_ssm.arn : aws_ssm_parameter.additional_github_app_key_base64[tostring(idx)].arn
+      }
+      installation_id = app.installation_id != null || app.installation_id_ssm != null ? {
+        name = app.installation_id_ssm != null ? app.installation_id_ssm.name : aws_ssm_parameter.additional_github_app_installation_id[tostring(idx)].name
+        arn  = app.installation_id_ssm != null ? app.installation_id_ssm.arn : aws_ssm_parameter.additional_github_app_installation_id[tostring(idx)].arn
+      } : null
+    }
+  ]
 }

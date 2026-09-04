@@ -42,12 +42,19 @@
         {
             "Effect": "Allow",
             "Action": [
-                "ssm:GetParameter"
+              "ssm:GetParameters"
             ],
             "Resource": [
-                "${github_app_key_base64_arn}",
-                "${github_app_id_arn}"
+                "${ssm_ami_id_parameter_arn}"
             ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters"
+            ],
+            "Resource": ${github_app_parameter_arns}
 %{ if kms_key_arn != "" ~}
         },
         {

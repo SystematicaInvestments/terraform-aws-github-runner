@@ -2,10 +2,11 @@
 
 This module shows how to create GitHub action runners with multiple runner configuration together in one deployment. This example has the configurations for the following runner types with the relevant labels supported by them as matchers:
 
-- Linux ARM64 `["self-hosted", "linux", "arm64", "amazon"]`
-- Linux Ubuntu `["self-hosted", "linux", "x64", "ubuntu-latest"]` or `["self-hosted", "linux", "x64", "ubuntu-2204"]`
-- Linux X64 `["self-hosted", "linux", "x64", "amazon"]`
-- Windows X64 `["self-hosted", "windows", "x64", "servercore-2022"]`
+- Linux ARM64 `["self-hosted", "linux", "arm64", "amazon"]`: Amazon Linux ARM64 non ephemeral runner based on module defaults
+- Linux Ubuntu 24.04 `["self-hosted", "linux", "x64", "ubuntu-latest"]` or `["self-hosted", "linux", "x64", "ubuntu-2404"]`: Ubuntu runners non ephemeral based on a custom start script.
+- Linux Ubuntu 22.04 `["self-hosted", "linux", "x64", "ubuntu-2204"]`: Ubuntu runners non ephemeral based on a custom start script.
+- Linux X64 `["self-hosted", "linux", "x64", "amazon"]`: Amazon X64 Linux runners ephemeral with retry enabled.
+- Windows X64 `["self-hosted", "windows", "x64", "servercore-2022"]`: Windows X64 Servercore 2022 runners non ephemeral based on a custom start script.
 
 The module will decide the runner for the workflow job based on the match in the labels defined in the workflow job and runner configuration. Also the runner configuration allows the match to be exact or non-exact match. We recommend to use only exact matches.
 
@@ -13,7 +14,11 @@ For exact match, all the labels defined in the workflow should be present in the
 
 ## Webhook
 
-For the list of provided runner configurations, there will be a single webhook and only a single Github App to receive the notifications for all types of workflow triggers.
+For the list of provided runner configurations, there will be a single webhook and only a single GitHub App to receive the notifications for all types of workflow triggers.
+
+## Multiple GitHub Apps (rate limit distribution)
+
+This example also shows how to optionally configure multiple GitHub Apps via the `additional_github_apps` variable. When configured, the control-plane lambdas (scale-up, scale-down, pool, job-retry) randomly select an app for each GitHub API call, spreading the rate limit usage across all apps. Only the primary app needs a webhook URL configured in GitHub.
 
 ## Lambda distribution
 
@@ -21,9 +26,9 @@ Per combination of OS and architecture a lambda distribution syncer will be crea
 
 ## Usages
 
-Steps for the full setup, such as creating a GitHub app can be found the [docs](https://philips-labs.github.io/terraform-aws-github-runner/). First download the Lambda releases from GitHub. Alternatively you can build the lambdas locally with Node or Docker, there is a simple build script in `<root>/.ci/build.sh`. In the `main.tf` you can simply remove the location of the lambda zip files, the default location will work in this case.
+Steps for the full setup, such as creating a GitHub app can be found the [docs](https://github-aws-runners.github.io/terraform-aws-github-runner/). First download the Lambda releases from GitHub. Alternatively you can build the lambdas locally with Node or Docker, there is a simple build script in `<root>/.ci/build.sh`. In the `main.tf` you can simply remove the location of the lambda zip files, the default location will work in this case.
 
-> The default example assumes local built lambda's available. Ensure you have built the lambda's. Alternativly you can downlowd the lambda's. The version needs to be set to a GitHub release version, see https://github.com/philips-labs/terraform-aws-github-runner/releases
+> The default example assumes local built lambda's available. Ensure you have built the lambda's. Alternatively you can download the lambda's. The version needs to be set to a GitHub release version, see https://github.com/github-aws-runners/terraform-aws-github-runner/releases
 
 ```bash
 cd ../lambdas-download
@@ -33,7 +38,7 @@ cd -
 ```
 
 
-Before running Terraform, ensure the GitHub app is configured. See the [configuration details](https://philips-labs.github.io/terraform-aws-github-runner/configuration/) for more details.
+Before running Terraform, ensure the GitHub app is configured. See the [configuration details](https://github-aws-runners.github.io/terraform-aws-github-runner/configuration/) for more details.
 
 ```bash
 terraform init
@@ -52,7 +57,7 @@ terraform output -raw webhook_secret
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.33 |
 | <a name="requirement_local"></a> [local](#requirement\_local) | ~> 2.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 
@@ -60,7 +65,8 @@ terraform output -raw webhook_secret
 
 | Name | Version |
 |------|---------|
-| <a name="provider_random"></a> [random](#provider\_random) | 3.6.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.35.1 |
+| <a name="provider_random"></a> [random](#provider\_random) | 3.8.1 |
 
 ## Modules
 
@@ -74,7 +80,11 @@ terraform output -raw webhook_secret
 
 | Name | Type |
 |------|------|
+| [aws_ssm_parameter.al2023_arm64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_parameter) | resource |
 | [random_id.random](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) | resource |
+| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_ssm_parameter.al2023_arm64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ssm_parameter) | data source |
+| [aws_ssm_parameter.al2023_x64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ssm_parameter) | data source |
 
 ## Inputs
 
@@ -82,7 +92,7 @@ terraform output -raw webhook_secret
 |------|-------------|------|---------|:--------:|
 | <a name="input_aws_region"></a> [aws\_region](#input\_aws\_region) | AWS region to deploy to | `string` | `"eu-west-1"` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment name, used as prefix | `string` | `null` | no |
-| <a name="input_github_app"></a> [github\_app](#input\_github\_app) | GitHub for API usages. | <pre>object({<br>    id         = string<br>    key_base64 = string<br>  })</pre> | n/a | yes |
+| <a name="input_github_app"></a> [github\_app](#input\_github\_app) | GitHub for API usages. | <pre>object({<br/>    id         = string<br/>    key_base64 = string<br/>  })</pre> | n/a | yes |
 
 ## Outputs
 

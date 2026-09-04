@@ -1,11 +1,16 @@
-import { logger } from '@terraform-aws-github-runner/aws-powertools-util';
+import { logger } from '@aws-github-runner/aws-powertools-util';
 import { APIGatewayEvent, Context } from 'aws-lambda';
-import { mocked } from 'jest-mock';
 
-import { githubWebhook } from './lambda';
-import { handle } from './webhook';
-import ValidationError from './ValidatonError';
-import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
+import { WorkflowJobEvent } from '@octokit/webhooks-types';
+
+import { dispatchToRunners, eventBridgeWebhook, directWebhook } from './lambda';
+import { publishForRunners, publishOnEventBridge } from './webhook';
+import ValidationError from './ValidationError';
+import { getParameter } from '@aws-github-runner/aws-ssm-util';
+import { dispatch } from './runners/dispatch';
+import { EventWrapper } from './types';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ConfigDispatcher, ConfigWebhook, ConfigWebhookEventBridge } from './ConfigLoader';
 
 const event: APIGatewayEvent = {
   body: JSON.stringify(''),
@@ -73,40 +78,151 @@ const context: Context = {
   },
 };
 
-jest.mock('./webhook');
-jest.mock('@terraform-aws-github-runner/aws-ssm-util');
+vi.mock('./runners/dispatch');
+vi.mock('./webhook');
+vi.mock('@aws-github-runner/aws-ssm-util');
 
-describe('Test scale up lambda wrapper.', () => {
+describe('Test webhook lambda wrapper.', () => {
   beforeEach(() => {
-    const mockedGet = mocked(getParameter);
-    mockedGet.mockResolvedValue('[]');
+    ConfigWebhook.reset();
+    ConfigWebhookEventBridge.reset();
+    ConfigDispatcher.reset();
+    delete process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS;
+    // We mock all SSM request to resolve to a non empty array. Since we mock all implemeantions
+    // relying on the config object that is enough to test the handlers.
+    const mockedGet = vi.mocked(getParameter);
+    mockedGet.mockResolvedValue('["abc"]');
+    vi.clearAllMocks();
   });
-  it('Happy flow, resolve.', async () => {
-    const mock = mocked(handle);
-    mock.mockImplementation(() => {
-      return new Promise((resolve) => {
-        resolve({ statusCode: 200 });
+
+  describe('Test webhook lambda wrapper.', () => {
+    it('Happy flow, resolve.', async () => {
+      const mock = vi.mocked(publishForRunners);
+      mock.mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolve({ body: 'test', statusCode: 200 });
+        });
       });
+
+      const result = await directWebhook(event, context);
+      expect(result).toEqual({ body: 'test', statusCode: 200 });
     });
 
-    const result = await githubWebhook(event, context);
-    expect(result).toEqual({ statusCode: 200 });
+    it('rejects a request outside the configured source CIDRs', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["192.30.252.0/22"]';
+
+      const result = await directWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(publishForRunners).not.toHaveBeenCalled();
+    });
+
+    it('An expected error, resolve.', async () => {
+      const mock = vi.mocked(publishForRunners);
+      mock.mockRejectedValue(new ValidationError(400, 'some error'));
+
+      const result = await directWebhook(event, context);
+      expect(result).toMatchObject({ body: 'some error', statusCode: 400 });
+    });
+
+    it('Errors are not thrown.', async () => {
+      const mock = vi.mocked(publishForRunners);
+      const logSpy = vi.spyOn(logger, 'error');
+      mock.mockRejectedValue(new Error('some error'));
+      const result = await directWebhook(event, context);
+      expect(result).toMatchObject({ body: 'Check the Lambda logs for the error details.', statusCode: 500 });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('An expected error, resolve.', async () => {
-    const mock = mocked(handle);
-    mock.mockRejectedValue(new ValidationError(400, 'some error'));
+  describe('Lmmbda eventBridgeWebhook.', () => {
+    beforeEach(() => {
+      process.env.EVENT_BUS_NAME = 'test';
+    });
 
-    const result = await githubWebhook(event, context);
-    expect(result).toMatchObject({ statusCode: 400 });
+    it('Happy flow, resolve.', async () => {
+      const mock = vi.mocked(publishOnEventBridge);
+      mock.mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolve({ body: 'test', statusCode: 200 });
+        });
+      });
+
+      const result = await eventBridgeWebhook(event, context);
+      expect(result).toEqual({ body: 'test', statusCode: 200 });
+    });
+
+    it('rejects a request outside the configured source CIDRs', async () => {
+      process.env.WEBHOOK_ALLOWED_SOURCE_CIDRS = '["2a0a:a440::/29"]';
+
+      const result = await eventBridgeWebhook(event, context);
+
+      expect(result).toEqual({ body: 'Source IP address is not allowed.', statusCode: 403 });
+      expect(publishOnEventBridge).not.toHaveBeenCalled();
+    });
+
+    it('Reject events .', async () => {
+      const mock = vi.mocked(publishOnEventBridge);
+      mock.mockRejectedValue(new Error('some error'));
+
+      mock.mockRejectedValue(new ValidationError(400, 'some error'));
+
+      const result = await eventBridgeWebhook(event, context);
+      expect(result).toMatchObject({ body: 'some error', statusCode: 400 });
+    });
+
+    it('Errors are not thrown.', async () => {
+      const mock = vi.mocked(publishOnEventBridge);
+      const logSpy = vi.spyOn(logger, 'error');
+      mock.mockRejectedValue(new Error('some error'));
+      const result = await eventBridgeWebhook(event, context);
+      expect(result).toMatchObject({ body: 'Check the Lambda logs for the error details.', statusCode: 500 });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('Errors are not thrown.', async () => {
-    const mock = mocked(handle);
-    const logSpy = jest.spyOn(logger, 'error');
-    mock.mockRejectedValue(new Error('some error'));
-    const result = await githubWebhook(event, context);
-    expect(result).toMatchObject({ statusCode: 500 });
-    expect(logSpy).toBeCalledTimes(1);
+  describe('Lambda dispatchToRunners.', () => {
+    it('Happy flow, resolve.', async () => {
+      const mock = vi.mocked(dispatch);
+      mock.mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolve({ body: 'test', statusCode: 200 });
+        });
+      });
+
+      const testEvent = {
+        'detail-type': 'workflow_job',
+      } as unknown as EventWrapper<WorkflowJobEvent>;
+
+      await expect(dispatchToRunners(testEvent, context)).resolves.not.toThrow();
+    });
+
+    it('Rejects non workflow_job events.', async () => {
+      const mock = vi.mocked(dispatch);
+      mock.mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolve({ body: 'test', statusCode: 200 });
+        });
+      });
+
+      const testEvent = {
+        'detail-type': 'non_workflow_job',
+      } as unknown as EventWrapper<WorkflowJobEvent>;
+
+      await expect(dispatchToRunners(testEvent, context)).rejects.toThrow(
+        'Incorrect Event detail-type only workflow_job is accepted',
+      );
+    });
+
+    it('Rejects any event causing an error.', async () => {
+      const mock = vi.mocked(dispatch);
+      mock.mockRejectedValue(new Error('some error'));
+
+      const testEvent = {
+        'detail-type': 'workflow_job',
+      } as unknown as EventWrapper<WorkflowJobEvent>;
+
+      await expect(dispatchToRunners(testEvent, context)).rejects.toThrow();
+    });
   });
 });

@@ -5,6 +5,7 @@ variable "config" {
       log_level                      = string
       logging_retention_in_days      = number
       logging_kms_key_id             = string
+      log_class                      = string
       reserved_concurrent_executions = number
       s3_bucket                      = string
       s3_key                         = string
@@ -16,6 +17,7 @@ variable "config" {
       timeout                        = number
       zip                            = string
       subnet_ids                     = list(string)
+      parameter_store_tags           = string
     })
     tags = map(string)
     ghes = object({
@@ -23,8 +25,9 @@ variable "config" {
       ssl_verify = string
     })
     github_app_parameters = object({
-      key_base64 = map(string)
-      id         = map(string)
+      key_base64      = list(map(string))
+      id              = list(map(string))
+      installation_id = list(object({ name = string, arn = string }))
     })
     subnet_ids = list(string)
     runner = object({
@@ -32,6 +35,7 @@ variable "config" {
       ephemeral                            = bool
       enable_jit_config                    = bool
       enable_on_demand_failover_for_errors = list(string)
+      scale_errors                         = list(string)
       boot_time_in_minutes                 = number
       labels                               = list(string)
       launch_template = object({
@@ -43,25 +47,33 @@ variable "config" {
       role = object({
         arn = string
       })
+      use_dedicated_host = bool
     })
+    runners_maximum_count         = number
     instance_types                = list(string)
+    instance_type_priorities      = optional(map(number))
     instance_target_capacity_type = string
     instance_allocation_strategy  = string
     instance_max_spot_price       = string
     prefix                        = string
     pool = list(object({
-      schedule_expression = string
-      size                = number
+      schedule_expression          = string
+      schedule_expression_timezone = string
+      size                         = number
     }))
+    include_busy_runners                 = bool
     role_permissions_boundary            = string
     kms_key_arn                          = string
     ami_kms_key_arn                      = string
+    ami_id_ssm_parameter_arn             = string
     role_path                            = string
     ssm_token_path                       = string
     ssm_config_path                      = string
     ami_id_ssm_parameter_name            = string
     ami_id_ssm_parameter_read_policy_arn = string
     arn_ssm_parameters_path_config       = string
+    lambda_tags                          = map(string)
+    user_agent                           = string
   })
 }
 

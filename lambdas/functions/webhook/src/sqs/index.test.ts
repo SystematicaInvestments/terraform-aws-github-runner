@@ -1,127 +1,131 @@
 import { SendMessageCommandInput } from '@aws-sdk/client-sqs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ActionRequestMessage, GithubWorkflowEvent, sendActionRequest, sendWebhookEventToWorkflowJobQueue } from '.';
-import workflowjob_event from '../../test/resources/github_workflowjob_event.json';
-import { Config } from '../ConfigResolver';
-import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
-import { mocked } from 'jest-mock';
-
-const mockSQS = {
-  sendMessage: jest.fn(() => {
-    return {};
-  }),
-};
-jest.mock('@aws-sdk/client-sqs', () => ({
-  SQS: jest.fn().mockImplementation(() => mockSQS),
+const { mockSqsClients, sqsConstructorSpy, tracedClients, logger } = vi.hoisted(() => ({
+  mockSqsClients: [] as Array<{ sendMessage: ReturnType<typeof vi.fn> }>,
+  sqsConstructorSpy: vi.fn(),
+  tracedClients: [] as unknown[],
+  logger: { debug: vi.fn() },
 }));
-jest.mock('@terraform-aws-github-runner/aws-ssm-util');
+
+function MockSQS(this: unknown, config?: unknown) {
+  sqsConstructorSpy(config);
+  const client = {
+    sendMessage: vi.fn().mockResolvedValue({}),
+  };
+  mockSqsClients.push(client);
+  return client;
+}
+
+vi.mock('@aws-sdk/client-sqs', () => ({
+  SQS: vi.fn(MockSQS),
+}));
+
+vi.mock('@aws-github-runner/aws-powertools-util', () => ({
+  createChildLogger: vi.fn(() => logger),
+  getTracedAWSV3Client: vi.fn((client: unknown) => {
+    tracedClients.push(client);
+    return client;
+  }),
+}));
+
+const cleanEnv = process.env;
 
 describe('Test sending message to SQS.', () => {
-  const queueUrl = 'https://sqs.eu-west-1.amazonaws.com/123456789/queued-builds';
-  const message = {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockSqsClients.length = 0;
+    tracedClients.length = 0;
+    process.env = { ...cleanEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...cleanEnv };
+  });
+
+  it('no fifo queue', async () => {
+    const queueUrl = 'https://sqs.eu-west-1.amazonaws.com/123456789/queued-builds';
+    const message = createMessage(queueUrl);
+    const { sendActionRequest } = await import('.');
+
+    // Arrange
+    const sqsMessage: SendMessageCommandInput = {
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify(message),
+    };
+
+    // Act
+    const result = sendActionRequest(message);
+
+    // Assert
+    expect(sqsConstructorSpy).toHaveBeenCalledWith({ region: 'eu-west-1' });
+    expect(mockSqsClients[0].sendMessage).toHaveBeenCalledWith(sqsMessage);
+    expect(tracedClients).toHaveLength(1);
+    expect(logger.debug).toHaveBeenCalledTimes(1);
+    await expect(result).resolves.not.toThrow();
+  });
+
+  it('falls back to AWS_REGION when the queue url is invalid', async () => {
+    process.env.AWS_REGION = 'us-east-2';
+    const { sendActionRequest } = await import('.');
+
+    await sendActionRequest(createMessage('not-a-valid-url'));
+
+    expect(sqsConstructorSpy).toHaveBeenCalledTimes(1);
+    expect(sqsConstructorSpy).toHaveBeenCalledWith({ region: 'us-east-2' });
+    expect(mockSqsClients[0].sendMessage).toHaveBeenCalledTimes(1);
+    expect(tracedClients).toHaveLength(1);
+  });
+
+  it('creates a client without an explicit region when no region can be resolved', async () => {
+    delete process.env.AWS_REGION;
+    const { sendActionRequest } = await import('.');
+
+    await sendActionRequest(createMessage('not-a-valid-url'));
+
+    expect(sqsConstructorSpy).toHaveBeenCalledTimes(1);
+    expect(sqsConstructorSpy).toHaveBeenCalledWith({});
+    expect(mockSqsClients[0].sendMessage).toHaveBeenCalledTimes(1);
+    expect(tracedClients).toHaveLength(1);
+  });
+
+  it('reuses the same client for multiple queues in the same region', async () => {
+    const { sendActionRequest } = await import('.');
+
+    await sendActionRequest(createMessage('https://sqs.us-east-1.amazonaws.com/123456789/queue-a'));
+    await sendActionRequest(createMessage('https://sqs.us-east-1.amazonaws.com/123456789/queue-b'));
+
+    expect(sqsConstructorSpy).toHaveBeenCalledTimes(1);
+    expect(sqsConstructorSpy).toHaveBeenCalledWith({ region: 'us-east-1' });
+    expect(mockSqsClients[0].sendMessage).toHaveBeenCalledTimes(2);
+    expect(tracedClients).toHaveLength(1);
+  });
+
+  it('creates a separate client per region', async () => {
+    const { sendActionRequest } = await import('.');
+
+    await sendActionRequest(createMessage('https://sqs.us-east-1.amazonaws.com/123456789/queue-a'));
+    await sendActionRequest(createMessage('https://sqs.eu-west-1.amazonaws.com/123456789/queue-b'));
+
+    expect(sqsConstructorSpy).toHaveBeenCalledTimes(2);
+    expect(sqsConstructorSpy).toHaveBeenNthCalledWith(1, { region: 'us-east-1' });
+    expect(sqsConstructorSpy).toHaveBeenNthCalledWith(2, { region: 'eu-west-1' });
+    expect(mockSqsClients).toHaveLength(2);
+    expect(mockSqsClients[0].sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSqsClients[1].sendMessage).toHaveBeenCalledTimes(1);
+    expect(tracedClients).toHaveLength(2);
+  });
+});
+
+function createMessage(queueId: string) {
+  return {
     eventType: 'type',
     id: 0,
     installationId: 0,
     repositoryName: 'test',
     repositoryOwner: 'owner',
-    queueId: queueUrl,
-    queueFifo: false,
+    queueId,
+    repoOwnerType: 'Organization',
   };
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('no fifo queue', async () => {
-    // Arrange
-    const no_fifo_message: ActionRequestMessage = {
-      ...message,
-      queueFifo: false,
-    };
-    const sqsMessage: SendMessageCommandInput = {
-      QueueUrl: queueUrl,
-      MessageBody: JSON.stringify(no_fifo_message),
-    };
-    // Act
-    const result = await sendActionRequest(no_fifo_message);
-
-    // Assert
-    expect(mockSQS.sendMessage).toBeCalledWith(sqsMessage);
-    expect(result).resolves;
-  });
-
-  it('use a fifo queue', async () => {
-    // Arrange
-    const fifo_message: ActionRequestMessage = {
-      ...message,
-      queueFifo: true,
-    };
-    const sqsMessage: SendMessageCommandInput = {
-      QueueUrl: queueUrl,
-      MessageBody: JSON.stringify(fifo_message),
-    };
-    // Act
-    const result = await sendActionRequest(fifo_message);
-
-    // Assert
-    expect(mockSQS.sendMessage).toBeCalledWith({ ...sqsMessage, MessageGroupId: String(message.id) });
-    expect(result).resolves;
-  });
-});
-
-describe('Test sending message to SQS.', () => {
-  const message: GithubWorkflowEvent = {
-    workflowJobEvent: JSON.parse(JSON.stringify(workflowjob_event)),
-  };
-  const sqsMessage: SendMessageCommandInput = {
-    QueueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789/webhook_events_workflow_job_queue',
-    MessageBody: JSON.stringify(message),
-  };
-  beforeEach(() => {
-    const mockedGet = mocked(getParameter);
-    mockedGet.mockResolvedValue('[]');
-  });
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('sends webhook events to workflow job queue', async () => {
-    // Arrange
-    process.env.SQS_WORKFLOW_JOB_QUEUE = sqsMessage.QueueUrl;
-    const config = await Config.load();
-
-    // Act
-    const result = await sendWebhookEventToWorkflowJobQueue(message, config);
-
-    // Assert
-    expect(mockSQS.sendMessage).toHaveBeenCalledWith(sqsMessage);
-    expect(result).resolves;
-  });
-
-  it('Does not send webhook events to workflow job event copy queue', async () => {
-    // Arrange
-    process.env.SQS_WORKFLOW_JOB_QUEUE = '';
-    const config = await Config.load();
-    // Act
-    await sendWebhookEventToWorkflowJobQueue(message, config);
-
-    // Assert
-    expect(mockSQS.sendMessage).not.toHaveBeenCalledWith(sqsMessage);
-  });
-
-  it('Catch the exception when even copy queue throws exception', async () => {
-    // Arrange
-    process.env.SQS_WORKFLOW_JOB_QUEUE = sqsMessage.QueueUrl;
-    const config = await Config.load();
-
-    const mockSQS = {
-      sendMessage: jest.fn(() => {
-        throw new Error();
-      }),
-    };
-    jest.mock('aws-sdk', () => ({
-      SQS: jest.fn().mockImplementation(() => mockSQS),
-    }));
-    await expect(sendWebhookEventToWorkflowJobQueue(message, config)).resolves.not.toThrow();
-  });
-});
+}

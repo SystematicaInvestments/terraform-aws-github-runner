@@ -58,6 +58,36 @@ create_xray_error_segment() {
   echo "$SEGMENT_DOC"
 }
 
+tag_instance_with_runner_id() {
+  echo "Checking for .runner file to extract agent ID"
+
+  if [[ ! -f "/opt/actions-runner/.runner" ]]; then
+    echo "Warning: .runner file not found"
+    return 0
+  fi
+
+  echo "Found .runner file, extracting agent ID"
+  local agent_id
+  agent_id=$(jq -r '.agentId' /opt/actions-runner/.runner 2>/dev/null || echo "")
+
+  if [[ -z "$agent_id" || "$agent_id" == "null" ]]; then
+    echo "Warning: Could not extract agent ID from .runner file"
+    return 0
+  fi
+
+  echo "Tagging instance with GitHub runner agent ID: $agent_id"
+  if aws ec2 create-tags \
+    --region "$region" \
+    --resources "$instance_id" \
+    --tags Key=ghr:github_runner_id,Value="$agent_id"; then
+    echo "Successfully tagged instance with agent ID: $agent_id"
+    return 0
+  else
+    echo "Warning: Failed to tag instance with agent ID"
+    return 0
+  fi
+}
+
 cleanup() {
   local exit_code="$1"
   local error_location="$2"
@@ -80,46 +110,19 @@ cleanup() {
   fi
 }
 
-set_job_hook() {
-  local job_hook_script="$1"
-  local job_hook_var_name="$2"
-
-  if [[ -f "$job_hook_script" ]]; then
-    echo "$job_hook_script exists - $job_hook_script"
-    echo "$job_hook_var_name=$job_hook_script" | tee -a /opt/actions-runner/.env
-  else
-    echo "$job_hook_script does not exist - $job_hook_script"
-  fi
-}
-
-create_job_start_hook_script() {
-  cat <<EOF > /opt/actions-runner/job_pre_start_hook.sh
-#!/bin/bash
-echo "Running job pre start hook"
-env
-echo ------
-ls -la /opt/actions-runner/_work/_temp/_github_workflow
-cat /opt/actions-runner/_work/_temp/_github_workflow/event.json
-
-EOF
-  chmod +x /opt/actions-runner/job_pre_start_hook.sh
-}
-
 trap 'cleanup $? $LINENO $BASH_LINENO' EXIT
 
-create_job_start_hook_script
-JOB_PRE_HOOK_SCRIPT=/opt/actions-runner/job_pre_start_hook.sh
-set_job_hook $JOB_PRE_HOOK_SCRIPT ACTIONS_RUNNER_HOOK_JOB_STARTED
-
-
+# IMDS and runner registration tokens are credentials. Never expose them in
+# user-data logs, even when debug logging enabled tracing earlier in bootstrap.
+set +x
 echo "Retrieving TOKEN from AWS API"
-token=$(curl -f -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180" || true)
+token=$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180" || true)
 if [ -z "$token" ]; then
   retrycount=0
   until [ -n "$token" ]; do
     echo "Failed to retrieve token. Retrying in 5 seconds."
     sleep 5
-    token=$(curl -f -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180" || true)
+    token=$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180" || true)
     retrycount=$((retrycount + 1))
     if [ $retrycount -gt 40 ]; then
       break
@@ -127,22 +130,22 @@ if [ -z "$token" ]; then
   done
 fi
 
-ami_id=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/ami-id)
+ami_id=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/ami-id)
 
-region=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+region=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
 echo "Retrieved REGION from AWS API ($region)"
 
-instance_id=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/instance-id)
+instance_id=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/instance-id)
 echo "Retrieved INSTANCE_ID from AWS API ($instance_id)"
 
-instance_type=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/instance-type)
-availability_zone=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/placement/availability-zone)
+instance_type=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/instance-type)
+availability_zone=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/placement/availability-zone)
 
 %{ if metadata_tags == "enabled" }
-environment=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/tags/instance/ghr:environment)
-ssm_config_path=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/tags/instance/ghr:ssm_config_path)
-runner_name_prefix=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/tags/instance/ghr:runner_name_prefix || echo "")
-xray_trace_id=$(curl -f -H "X-aws-ec2-metadata-token: $token" -v http://169.254.169.254/latest/meta-data/tags/instance/ghr:trace_id || echo "")
+environment=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/tags/instance/ghr:environment)
+ssm_config_path=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/tags/instance/ghr:ssm_config_path)
+runner_name_prefix=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/tags/instance/ghr:runner_name_prefix || echo "")
+xray_trace_id=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/tags/instance/ghr:trace_id || echo "")
 
 %{ else }
 tags=$(aws ec2 describe-tags --region "$region" --filters "Name=resource-id,Values=$instance_id")
@@ -170,6 +173,9 @@ echo "Retrieved /$ssm_config_path/enable_cloudwatch parameter - ($enable_cloudwa
 
 agent_mode=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/agent_mode") | .Value')
 echo "Retrieved /$ssm_config_path/agent_mode parameter - ($agent_mode)"
+
+disable_default_labels=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/disable_default_labels") | .Value')
+echo "Retrieved /$ssm_config_path/disable_default_labels parameter - ($disable_default_labels)"
 
 enable_jit_config=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/enable_jit_config") | .Value')
 echo "Retrieved /$ssm_config_path/enable_jit_config parameter - ($enable_jit_config)"
@@ -217,7 +223,7 @@ if [[ "$run_as" == "root" ]]; then
   export RUNNER_ALLOW_RUNASROOT=1
 fi
 
-chown -R $run_as .
+chown -R $run_as /opt/actions-runner
 
 info_arch=$(uname -p)
 info_os=$( ( lsb_release -ds || cat /etc/*release || uname -om ) 2>/dev/null | head -n1 | cut -d "=" -f2- | tr -d '"')
@@ -246,7 +252,15 @@ echo "Starting the runner as user $run_as"
 # configure the runner if the runner is non ephemeral or jit config is disabled
 if [[ "$enable_jit_config" == "false" || $agent_mode != "ephemeral" ]]; then
   echo "Configure GH Runner as user $run_as"
-  sudo -E -u "$run_as" -- ./config.sh --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
+  if [[ "$disable_default_labels" == "true" ]]; then
+      extra_flags="--no-default-labels"
+  else
+      extra_flags=""
+  fi
+  sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./config.sh $${extra_flags} --unattended --name "$runner_name_prefix$instance_id" --work "_work" $${config}
+
+  # Tag instance with GitHub runner agent ID for non-JIT runners
+  tag_instance_with_runner_id
 fi
 
 create_xray_success_segment "$SEGMENT"
@@ -255,15 +269,17 @@ if [[ $agent_mode = "ephemeral" ]]; then
 
   if [[ "$enable_jit_config" == "true" ]]; then
     echo "Starting with JIT config"
-    sudo -E -u "$run_as" -- ./run.sh --jitconfig $${config}
+    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh --jitconfig $${config}
   else
     echo "Starting without JIT config"
-    sudo -E -u "$run_as" -- ./run.sh
+    sudo --preserve-env=RUNNER_ALLOW_RUNASROOT,HTTP_PROXY,HTTPS_PROXY,http_proxy,https_proxy,NO_PROXY,no_proxy,NODE_USE_ENV_PROXY,NODE_EXTRA_CA_CERTS -u "$run_as" -- ./run.sh
   fi
   echo "Runner has finished"
 else
   echo "Installing the runner as a service"
-  export GITHUB_ACTIONS_RUNNER_SERVICE_TEMPLATE="/opt/github.runner.service.template"
+  if [[ -f "/opt/github.runner.service.template" ]]; then
+    export GITHUB_ACTIONS_RUNNER_SERVICE_TEMPLATE="/opt/github.runner.service.template"
+  fi
   ./svc.sh install "$run_as"
   echo "Starting the runner in persistent mode"
   ./svc.sh start

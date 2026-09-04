@@ -1,21 +1,21 @@
-import { logger } from '@terraform-aws-github-runner/aws-powertools-util';
+import { logger } from '@aws-github-runner/aws-powertools-util';
 
-import { ActionRequestMessage, scaleUp } from './scale-runners/scale-up';
+import { scaleUpHandler } from './lambda';
+import { Context, SQSEvent } from 'aws-lambda';
 
-const sqsEvent = {
+const sqsEvent: SQSEvent = {
   Records: [
     {
       messageId: 'e8d74d08-644e-42ca-bf82-a67daa6c4dad',
       receiptHandle:
-        // eslint-disable-next-line max-len
         'AQEBCpLYzDEKq4aKSJyFQCkJduSKZef8SJVOperbYyNhXqqnpFG5k74WygVAJ4O0+9nybRyeOFThvITOaS21/jeHiI5fgaM9YKuI0oGYeWCIzPQsluW5CMDmtvqv1aA8sXQ5n2x0L9MJkzgdIHTC3YWBFLQ2AxSveOyIHwW+cHLIFCAcZlOaaf0YtaLfGHGkAC4IfycmaijV8NSlzYgDuxrC9sIsWJ0bSvk5iT4ru/R4+0cjm7qZtGlc04k9xk5Fu6A+wRxMaIyiFRY+Ya19ykcevQldidmEjEWvN6CRToLgclk=',
-      body: {
+      body: JSON.stringify({
         repositoryName: 'self-hosted',
         repositoryOwner: 'test-runners',
         eventType: 'workflow_job',
         id: 987654,
         installationId: 123456789,
-      },
+      }),
       attributes: {
         ApproximateReceiveCount: '1',
         SentTimestamp: '1626450047230',
@@ -28,18 +28,40 @@ const sqsEvent = {
       messageAttributes: {},
       md5OfBody: '4aef3bd70526e152e86426a0938cbec6',
       eventSource: 'aws:sqs',
-      eventSourceARN: 'arn:aws:sqs:us-west-2:916370655143:cicddev-queued-builds.fifo',
+      eventSourceARN: 'arn:aws:sqs:us-west-2:916370655143:cicddev-queued-builds',
       awsRegion: 'us-west-2',
     },
   ],
 };
 
+const context: Context = {
+  awsRequestId: '1',
+  callbackWaitsForEmptyEventLoop: false,
+  functionName: '',
+  functionVersion: '',
+  getRemainingTimeInMillis: () => 0,
+  invokedFunctionArn: '',
+  logGroupName: '',
+  logStreamName: '',
+  memoryLimitInMB: '',
+  done: () => {
+    return;
+  },
+  fail: () => {
+    return;
+  },
+  succeed: () => {
+    return;
+  },
+};
+
 export function run(): void {
-  scaleUp(sqsEvent.Records[0].eventSource, sqsEvent.Records[0].body as ActionRequestMessage)
-    .then()
-    .catch((e) => {
-      logger.error(e);
-    });
+  try {
+    scaleUpHandler(sqsEvent, context);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : `${e}`;
+    logger.error(message, e instanceof Error ? { error: e } : {});
+  }
 }
 
 run();

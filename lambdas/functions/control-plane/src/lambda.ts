@@ -1,31 +1,85 @@
 import middy from '@middy/core';
-import { logger, setContext } from '@terraform-aws-github-runner/aws-powertools-util';
-import { captureLambdaHandler, tracer } from '@terraform-aws-github-runner/aws-powertools-util';
-import { Context, SQSEvent } from 'aws-lambda';
+import { logger, setContext } from '@aws-github-runner/aws-powertools-util';
+import { captureLambdaHandler, tracer } from '@aws-github-runner/aws-powertools-util';
+import { Context, type SQSBatchItemFailure, type SQSBatchResponse, SQSEvent } from 'aws-lambda';
 
 import { PoolEvent, adjust } from './pool/pool';
-import ScaleError from './scale-runners/ScaleError';
 import { scaleDown } from './scale-runners/scale-down';
 import { scaleUp } from './scale-runners/scale-up';
+import type { ActionRequestMessage, ActionRequestMessageSQS } from './scale-runners/types';
 import { SSMCleanupOptions, cleanSSMTokens } from './scale-runners/ssm-housekeeper';
+import { checkAndRetryJob } from './scale-runners/job-retry';
 
-export async function scaleUpHandler(event: SQSEvent, context: Context): Promise<void> {
+export async function scaleUpHandler(event: SQSEvent, context: Context): Promise<SQSBatchResponse> {
   setContext(context, 'lambda.ts');
   logger.logEventIfEnabled(event);
 
-  if (event.Records.length !== 1) {
-    logger.warn('Event ignored, only one record at the time can be handled, ensure the lambda batch size is set to 1.');
-    return new Promise((resolve) => resolve());
+  const sqsMessages: ActionRequestMessageSQS[] = [];
+  const warnedEventSources = new Set<string>();
+
+  for (const { body, eventSource, messageId } of event.Records) {
+    if (eventSource !== 'aws:sqs') {
+      if (!warnedEventSources.has(eventSource)) {
+        logger.warn('Ignoring non-sqs event source', { eventSource });
+        warnedEventSources.add(eventSource);
+      }
+
+      continue;
+    }
+
+    let payload: ActionRequestMessage;
+    try {
+      payload = JSON.parse(body) as ActionRequestMessage;
+    } catch (e) {
+      // A malformed body is a permanent, non-retryable failure. Keep it out of
+      // batchItemFailures so the event source mapping acknowledges and deletes it,
+      // while valid records in the same batch continue to scale up normally.
+      logger.error(`Ignoring message ${messageId}, body is not valid JSON`, { error: e, messageId });
+
+      continue;
+    }
+    sqsMessages.push({ ...payload, messageId });
   }
 
+  // Sort messages by their retry count, so that we retry the same messages if
+  // there's a persistent failure. This should cause messages to be dropped
+  // quicker than if we retried in an arbitrary order.
+  sqsMessages.sort((l, r) => {
+    return (l.retryCounter ?? 0) - (r.retryCounter ?? 0);
+  });
+
+  // The SQS event source mapping owns message acknowledgement and deletion. Because
+  // ReportBatchItemFailures is enabled, a successful handler response makes Lambda
+  // delete every record not listed here; listed records remain in SQS and become
+  // available for retry after their visibility timeout expires.
+  const batchItemFailures: SQSBatchItemFailure[] = [];
+
   try {
-    await scaleUp(event.Records[0].eventSource, JSON.parse(event.Records[0].body));
-  } catch (e) {
-    if (e instanceof ScaleError) {
-      throw e;
-    } else {
-      logger.warn(`Ignoring error: ${(e as Error).message}`);
+    const retryMessageIds = await scaleUp(sqsMessages);
+
+    if (retryMessageIds.length > 0) {
+      logger.warn('SQS messages will be retried.', {
+        messageIds: retryMessageIds,
+      });
     }
+
+    for (const messageId of retryMessageIds) {
+      batchItemFailures.push({
+        itemIdentifier: messageId,
+      });
+    }
+
+    return { batchItemFailures };
+  } catch (e) {
+    logger.error(`Error processing batch (size: ${sqsMessages.length}): ${(e as Error).message}, retrying batch`, {
+      error: e,
+    });
+
+    return {
+      batchItemFailures: sqsMessages.map(({ messageId }) => ({
+        itemIdentifier: messageId,
+      })),
+    };
   }
 }
 
@@ -47,8 +101,9 @@ export async function adjustPool(event: PoolEvent, context: Context): Promise<vo
   try {
     await adjust(event);
   } catch (e) {
-    logger.error(`${(e as Error).message}`, { error: e as Error });
+    logger.error(`Handle error for adjusting pool. ${(e as Error).message}`, { error: e as Error });
   }
+  return Promise.resolve();
 }
 
 export const addMiddleware = () => {
@@ -73,4 +128,17 @@ export async function ssmHousekeeper(event: unknown, context: Context): Promise<
   } catch (e) {
     logger.error(`${(e as Error).message}`, { error: e as Error });
   }
+}
+
+export async function jobRetryCheck(event: SQSEvent, context: Context): Promise<void> {
+  setContext(context, 'lambda.ts');
+  logger.logEventIfEnabled(event);
+
+  for (const record of event.Records) {
+    const payload = JSON.parse(record.body);
+    await checkAndRetryJob(payload).catch((e) => {
+      logger.warn(`Error processing job retry: ${e.message}`, { error: e });
+    });
+  }
+  return Promise.resolve();
 }

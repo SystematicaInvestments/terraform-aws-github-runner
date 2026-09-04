@@ -1,6 +1,44 @@
 
 ## Retrieve instance metadata
 
+function Tag-InstanceWithRunnerId {
+    Write-Host "Checking for .runner file to extract agent ID"
+
+    $runnerFilePath = "$pwd\.runner"
+    if (-not (Test-Path $runnerFilePath)) {
+        Write-Host "Warning: .runner file not found"
+        return $true
+    }
+
+    Write-Host "Found .runner file, extracting agent ID"
+    try {
+        $runnerConfig = Get-Content $runnerFilePath | ConvertFrom-Json
+        $agentId = $runnerConfig.agentId
+
+        if (-not $agentId -or $agentId -eq $null) {
+            Write-Host "Warning: Could not extract agent ID from .runner file"
+            return $true
+        }
+
+        Write-Host "Tagging instance with GitHub runner agent ID: $agentId"
+        $tagResult = aws ec2 create-tags --region "$Region" --resources "$InstanceId" --tags "Key=ghr:github_runner_id,Value=$agentId" 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Successfully tagged instance with agent ID: $agentId"
+            return $true
+        } else {
+            Write-Host "Warning: Failed to tag instance with agent ID - $tagResult"
+            return $true
+        }
+    }
+    catch {
+        Write-Host "Warning: Error processing .runner file - $($_.Exception.Message)"
+        return $true
+    }
+}
+
+## Retrieve instance metadata
+
 Write-Host  "Retrieving TOKEN from AWS API"
 $token=Invoke-RestMethod -Method PUT -Uri "http://169.254.169.254/latest/api/token" -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "180"}
 if ( ! $token ) {
@@ -50,6 +88,12 @@ Write-Host  "Retrieved $ssm_config_path/enable_cloudwatch parameter - ($enable_c
 
 $agent_mode=$parameters.where( {$_.Name -eq "$ssm_config_path/agent_mode"}).value
 Write-Host  "Retrieved $ssm_config_path/agent_mode parameter - ($agent_mode)"
+
+$disable_default_labels=$parameters.where( {$_.Name -eq "$ssm_config_path/disable_default_labels"}).value
+Write-Host  "Retrieved $ssm_config_path/disable_default_labels parameter - ($disable_default_labels)"
+
+$enable_jit_config=$parameters.where( {$_.Name -eq "$ssm_config_path/enable_jit_config"}).value
+Write-Host  "Retrieved $ssm_config_path/enable_jit_config parameter - ($enable_jit_config)"
 
 $token_path=$parameters.where( {$_.Name -eq "$ssm_config_path/token_path"}).value
 Write-Host  "Retrieved $ssm_config_path/token_path parameter - ($token_path)"
@@ -103,15 +147,23 @@ foreach ($group in @("Administrators", "docker-users")) {
 }
 
 # Disable User Access Control (UAC)
-# TODO investigate if this is needed or if its overkill - https://github.com/philips-labs/terraform-aws-github-runner/issues/1505
+# TODO investigate if this is needed or if its overkill - https://github.com/github-aws-runners/terraform-aws-github-runner/issues/1505
 Set-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name ConsentPromptBehaviorAdmin -Value 0 -Force
 Write-Host "Disabled User Access Control (UAC)"
 
-$configCmd = ".\config.cmd --unattended --name $runner_name_prefix$InstanceId --work `"_work`" $config"
-Write-Host "Configure GH Runner as user $run_as"
-Invoke-Expression $configCmd
+$runnerExtraOptions = ""
+if ($disable_default_labels -eq "true") {
+    $runnerExtraOptions += "--no-default-labels"
+}
 
-Write-Host "Starting the runner as user $run_as"
+if ($enable_jit_config -eq "false" -or $agent_mode -ne "ephemeral") {
+  $configCmd = ".\config.cmd --unattended --name $runner_name_prefix$InstanceId --work `"_work`" $runnerExtraOptions $config"
+  Write-Host "Configure GH Runner (non ephmeral / no JIT) as user $run_as"
+  Invoke-Expression $configCmd
+
+  # Tag instance with GitHub runner agent ID for non-JIT runners
+  Tag-InstanceWithRunnerId
+}
 
 $jsonBody = @(
     @{
@@ -121,10 +173,34 @@ $jsonBody = @(
 )
 ConvertTo-Json -InputObject $jsonBody | Set-Content -Path "$pwd\.setup_info"
 
-Write-Host  "Installing the runner as a service"
 
-$action = New-ScheduledTaskAction -WorkingDirectory "$pwd" -Execute "run.cmd"
-$trigger = Get-CimClass "MSFT_TaskRegistrationTrigger" -Namespace "Root/Microsoft/Windows/TaskScheduler"
-Register-ScheduledTask -TaskName "runnertask" -Action $action -Trigger $trigger -User $username -Password $password -RunLevel Highest -Force
-Write-Host "Starting the runner in persistent mode"
+Write-Host "Starting the runner in $agent_mode mode"
 Write-Host "Starting runner after $(((get-date) - (gcim Win32_OperatingSystem).LastBootUpTime).tostring("hh':'mm':'ss''"))"
+
+if ($agent_mode -eq "ephemeral") {
+    if ($enable_jit_config -eq "true") {
+        Write-Host "Starting with jit config"
+        Invoke-Expression ".\run.cmd --jitconfig $${config}"
+    }
+    else {
+        Write-Host "Starting without jit config"
+        Invoke-Expression ".\run.cmd"
+    }
+    Write-Host "Runner has finished"
+
+    if ($enable_cloudwatch_agent)
+    {
+        Write-Host "Stopping CloudWatch Agent"
+        & 'C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1' -a stop
+    }
+
+    Write-Host "Terminating instance"
+    aws ec2 terminate-instances --instance-ids "$InstanceId" --region "$Region"
+} else {
+    Write-Host  "Installing the runner as a service"
+
+    $action = New-ScheduledTaskAction -WorkingDirectory "$pwd" -Execute "run.cmd"
+    $trigger = Get-CimClass "MSFT_TaskRegistrationTrigger" -Namespace "Root/Microsoft/Windows/TaskScheduler"
+    Register-ScheduledTask -TaskName "runnertask" -Action $action -Trigger $trigger -User $username -Password $password -RunLevel Highest -Force
+    Write-Host "Starting runner after $(((get-date) - (gcim Win32_OperatingSystem).LastBootUpTime).tostring("hh':'mm':'ss''"))"
+}

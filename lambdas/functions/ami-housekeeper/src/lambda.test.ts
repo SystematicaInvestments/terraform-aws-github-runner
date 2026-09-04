@@ -1,12 +1,12 @@
-import { logger } from '@terraform-aws-github-runner/aws-powertools-util';
+import { logger } from '@aws-github-runner/aws-powertools-util';
 import { Context } from 'aws-lambda';
-import { mocked } from 'jest-mock';
 
 import { AmiCleanupOptions, amiCleanup } from './ami';
 import { handler } from './lambda';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 
-jest.mock('./ami');
-jest.mock('@terraform-aws-github-runner/aws-powertools-util');
+vi.mock('./ami');
+vi.mock('@aws-github-runner/aws-powertools-util');
 
 const amiCleanupOptions: AmiCleanupOptions = {
   minimumDaysOld: undefined,
@@ -39,27 +39,26 @@ const context: Context = {
   },
 };
 
-// Docs for testing async with jest: https://jestjs.io/docs/tutorial-async
 describe('Housekeeper ami', () => {
   beforeAll(() => {
-    jest.resetAllMocks();
+    vi.resetAllMocks();
   });
 
   it('should not throw or log in error.', async () => {
-    const mock = mocked(amiCleanup);
+    const mock = vi.mocked(amiCleanup);
     mock.mockImplementation(() => {
       return new Promise((resolve) => {
         resolve();
       });
     });
-    expect(await handler(undefined, context)).resolves;
+    await expect(handler(undefined, context)).resolves.not.toThrow();
   });
 
-  it('should not thow only log in error in case of an exception.', async () => {
-    const logSpy = jest.spyOn(logger, 'error');
+  it('should not throw only log in error in case of an exception.', async () => {
+    const logSpy = vi.spyOn(logger, 'error');
 
     const error = new Error('An error.');
-    const mock = mocked(amiCleanup);
+    const mock = vi.mocked(amiCleanup);
     mock.mockRejectedValue(error);
     await expect(handler(undefined, context)).resolves.toBeUndefined();
 
