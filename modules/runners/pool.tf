@@ -4,6 +4,8 @@ module "pool" {
   source = "./pool"
 
   config = {
+    http_proxy            = var.http_proxy
+    no_proxy              = var.no_proxy
     prefix                = var.prefix
     runners_maximum_count = var.runners_maximum_count
     ghes = {
@@ -20,6 +22,7 @@ module "pool" {
     ami_kms_key_arn               = local.ami_kms_key_arn
     ami_id_ssm_parameter_arn      = local.ami_id_ssm_module_managed ? aws_ssm_parameter.runner_ami_id[0].arn : var.ami.id_ssm_parameter_arn
     lambda = {
+      layers                         = var.http_proxy != null ? [aws_lambda_layer_version.barracuda_ca[0].arn] : []
       log_level                      = var.log_level
       logging_retention_in_days      = var.logging_retention_in_days
       logging_kms_key_id             = var.logging_kms_key_id

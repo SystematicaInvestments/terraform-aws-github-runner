@@ -1,7 +1,10 @@
 variable "config" {
   description = "Lookup details in parent module."
   type = object({
+    http_proxy = optional(string)
+    no_proxy   = optional(string)
     lambda = object({
+      layers                         = optional(list(string), [])
       log_level                      = string
       logging_retention_in_days      = number
       logging_kms_key_id             = string
