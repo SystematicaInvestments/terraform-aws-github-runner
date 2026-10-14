@@ -130,7 +130,7 @@ beforeEach(() => {
   process.env.GITHUB_APP_ID = '1337';
   process.env.GITHUB_APP_CLIENT_ID = 'TEST_CLIENT_ID';
   process.env.GITHUB_APP_CLIENT_SECRET = 'TEST_CLIENT_SECRET';
-  process.env.RUNNERS_MAXIMUM_COUNT = '3';
+  process.env.RUNNERS_MAXIMUM_COUNT = '10';
   process.env.ENVIRONMENT = 'unit-test-environment';
   process.env.ENABLE_ORGANIZATION_RUNNERS = 'true';
   process.env.LAUNCH_TEMPLATE_NAME = 'lt-1';
@@ -359,5 +359,60 @@ describe('Test simple pool.', () => {
         'pool-lambda',
       );
     });
+  });
+});
+
+describe('Pool fleet capacity', () => {
+  it('does not add a spare when the total fleet is at its cap', async () => {
+    process.env.RUNNERS_MAXIMUM_COUNT = '4';
+    await adjust({ poolSize: 3 });
+    expect(createRunners).not.toHaveBeenCalled();
+  });
+
+  it('limits replenishment to available fleet capacity', async () => {
+    process.env.RUNNERS_MAXIMUM_COUNT = '5';
+    await adjust({ poolSize: 4 });
+    expect(createRunners).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      1,
+      expect.anything(),
+      'pool-lambda',
+    );
+  });
+
+  it('counts pending instances against capacity and checks both EC2 states', async () => {
+    process.env.RUNNERS_MAXIMUM_COUNT = '5';
+    mockListRunners.mockResolvedValue([
+      ...ec2InstancesRegistered,
+      { instanceId: 'i-pending', launchTime: new Date(), type: 'Org', owner: ORG },
+    ]);
+    await adjust({ poolSize: 4 });
+    expect(createRunners).not.toHaveBeenCalled();
+    expect(listEC2Runners).toHaveBeenCalledWith(expect.objectContaining({ statuses: ['pending', 'running'] }));
+  });
+
+  it('allows disabling replenishment with a zero fleet cap', async () => {
+    process.env.RUNNERS_MAXIMUM_COUNT = '0';
+    await adjust({ poolSize: 3 });
+    expect(createRunners).not.toHaveBeenCalled();
+  });
+
+  it('preserves standalone-controller behavior when no cap is supplied', async () => {
+    delete process.env.RUNNERS_MAXIMUM_COUNT;
+    await adjust({ poolSize: 5 });
+    expect(createRunners).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      3,
+      expect.anything(),
+      'pool-lambda',
+    );
+  });
+
+  it.each(['-1', 'invalid', '2.5'])('rejects invalid capacity %s before launching', async (value) => {
+    process.env.RUNNERS_MAXIMUM_COUNT = value;
+    await expect(adjust({ poolSize: 3 })).rejects.toThrow('RUNNERS_MAXIMUM_COUNT must be a non-negative integer');
+    expect(createRunners).not.toHaveBeenCalled();
   });
 });

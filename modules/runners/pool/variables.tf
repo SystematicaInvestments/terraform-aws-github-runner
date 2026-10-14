@@ -51,6 +51,7 @@ variable "config" {
     instance_target_capacity_type = string
     instance_allocation_strategy  = string
     instance_max_spot_price       = string
+    runners_maximum_count         = optional(number)
     prefix                        = string
     pool = list(object({
       schedule_expression          = string

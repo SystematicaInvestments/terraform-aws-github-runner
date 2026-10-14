@@ -21,6 +21,11 @@ interface RunnerStatus {
 
 export async function adjust(event: PoolEvent): Promise<void> {
   logger.info(`Checking current pool size against pool of size: ${event.poolSize}`);
+  const maximumCountSetting = process.env.RUNNERS_MAXIMUM_COUNT;
+  const maximumCount = maximumCountSetting ? Number(maximumCountSetting) : undefined;
+  if (maximumCount !== undefined && (!Number.isInteger(maximumCount) || maximumCount < 0)) {
+    throw new Error('RUNNERS_MAXIMUM_COUNT must be a non-negative integer');
+  }
   const runnerLabels = process.env.RUNNER_LABELS || '';
   const runnerGroup = process.env.RUNNER_GROUP_NAME || '';
   const runnerNamePrefix = process.env.RUNNER_NAME_PREFIX || '';
@@ -66,11 +71,14 @@ export async function adjust(event: PoolEvent): Promise<void> {
     environment,
     runnerOwner,
     runnerType: 'Org',
-    statuses: ['running'],
+    statuses: ['pending', 'running'],
   });
 
   const numberOfRunnersInPool = calculatePooSize(ec2runners, runnerStatusses);
-  const topUp = event.poolSize - numberOfRunnersInPool;
+  // Busy and pending instances also consume fleet capacity. Without this guard,
+  // the pool can create an extra spare when scale-up has already reached its cap.
+  const availableCapacity = maximumCount === undefined ? Infinity : Math.max(0, maximumCount - ec2runners.length);
+  const topUp = Math.min(Math.max(0, event.poolSize - numberOfRunnersInPool), availableCapacity);
 
   if (topUp > 0) {
     logger.info(`The pool will be topped up with ${topUp} runners.`);

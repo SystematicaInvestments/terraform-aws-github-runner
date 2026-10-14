@@ -38,6 +38,7 @@ resource "aws_lambda_function" "pool" {
       RUNNER_LABELS                            = lower(join(",", var.config.runner.labels))
       RUNNER_GROUP_NAME                        = var.config.runner.group_name
       RUNNER_NAME_PREFIX                       = var.config.runner.name_prefix
+      RUNNERS_MAXIMUM_COUNT                    = var.config.runners_maximum_count == null ? "" : tostring(var.config.runners_maximum_count)
       RUNNER_OWNER                             = var.config.runner.pool_owner
       SSM_TOKEN_PATH                           = var.config.ssm_token_path
       SSM_CONFIG_PATH                          = var.config.ssm_config_path
