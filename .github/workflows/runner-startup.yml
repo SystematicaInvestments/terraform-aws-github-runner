@@ -1,0 +1,19 @@
+name: Runner startup regression
+on:
+  pull_request:
+    branches: [main, release/v7.6.0-stc]
+    paths:
+      - modules/runners/templates/start-runner.sh
+      - tests/test-runner-os-info.sh
+      - .github/workflows/runner-startup.yml
+permissions:
+  contents: read
+jobs:
+  os_metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Check multiline OS metadata under pipefail
+        run: bash tests/test-runner-os-info.sh

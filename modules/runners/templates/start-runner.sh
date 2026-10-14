@@ -223,7 +223,8 @@ fi
 chown -R $run_as /opt/actions-runner
 
 info_arch=$(uname -p)
-info_os=$( ( lsb_release -ds || cat /etc/*release || uname -om ) 2>/dev/null | head -n1 | cut -d "=" -f2- | tr -d '"')
+# Consume the full release output so pipefail cannot turn an early pipe close into SIGPIPE.
+info_os=$( ( lsb_release -ds || cat /etc/*release || uname -om ) 2>/dev/null | sed -n '1p' | cut -d "=" -f2- | tr -d '"')
 
 tee /opt/actions-runner/.setup_info <<EOL
 [
