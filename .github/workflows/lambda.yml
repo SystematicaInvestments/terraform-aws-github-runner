@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - release/v7.6.0-stc
     paths:
       - 'lambdas/**'
       - '.github/workflows/lambda.yml'
