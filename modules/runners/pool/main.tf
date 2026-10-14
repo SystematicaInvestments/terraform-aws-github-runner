@@ -7,6 +7,7 @@ resource "aws_lambda_function" "pool" {
   source_code_hash               = var.config.lambda.s3_bucket == null ? filebase64sha256(var.config.lambda.zip) : null
   function_name                  = "${var.config.prefix}-pool"
   role                           = aws_iam_role.pool.arn
+  layers                         = var.config.lambda.layers
   handler                        = "index.adjustPool"
   architectures                  = [var.config.lambda.architecture]
   runtime                        = var.config.lambda.runtime
@@ -23,6 +24,14 @@ resource "aws_lambda_function" "pool" {
       ENABLE_JIT_CONFIG                        = var.config.runner.enable_jit_config
       ENVIRONMENT                              = var.config.prefix
       GHES_URL                                 = var.config.ghes.url
+      HTTP_PROXY                               = var.config.http_proxy
+      HTTPS_PROXY                              = var.config.http_proxy
+      http_proxy                               = var.config.http_proxy
+      https_proxy                              = var.config.http_proxy
+      NO_PROXY                                 = var.config.no_proxy
+      no_proxy                                 = var.config.no_proxy
+      NODE_USE_ENV_PROXY                       = var.config.http_proxy != null ? "1" : ""
+      NODE_EXTRA_CA_CERTS                      = var.config.http_proxy != null ? "/opt/barracuda_ca.crt" : ""
       USER_AGENT                               = var.config.user_agent
       INSTANCE_ALLOCATION_STRATEGY             = var.config.instance_allocation_strategy
       INSTANCE_MAX_SPOT_PRICE                  = var.config.instance_max_spot_price
